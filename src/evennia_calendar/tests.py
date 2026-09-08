@@ -5,7 +5,7 @@ Every test carries its case ID from docs/test-plan.md as its docstring, so
 the coverage trail reads in both directions.
 """
 
-from unittest import TestCase
+from unittest import TestCase, mock
 
 from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase, override_settings
@@ -93,3 +93,21 @@ class StartingYearTests(SimpleTestCase):
         """CF-10"""
         with self.assertRaises(ImproperlyConfigured):
             check_settings()
+
+    @override_settings(CALENDAR_STARTING_YEAR=-1)
+    def test_cf_11_a_refusal_is_logged_with_the_exception_text(self):
+        """CF-11"""
+        with mock.patch("evennia_calendar.config.calendar_log") as logged:
+            with self.assertRaises(ImproperlyConfigured) as caught:
+                check_settings()
+
+        logged.assert_called_once()
+        self.assertEqual(logged.call_args.args[0], str(caught.exception))
+        self.assertEqual(logged.call_args.kwargs.get("level"), "ERROR")
+
+    def test_cf_12_a_passing_check_logs_nothing(self):
+        """CF-12"""
+        with mock.patch("evennia_calendar.config.calendar_log") as logged:
+            check_settings()
+
+        logged.assert_not_called()

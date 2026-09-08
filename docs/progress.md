@@ -4,8 +4,8 @@ Running log of milestones with links to evidence. Reverse chronological — newe
 
 ## 2026-09-08 — a game can be configured, and refused
 
-12 tests, all passing. The library has one setting and it is validated at boot. Nothing derives a date
-yet. Ten cases, `CF-01` to `CF-10`.
+14 tests, all passing. The library has one setting, it is validated at boot, and a refusal reaches
+`calendar.log`. Nothing derives a date yet. Twelve cases, `CF-01` to `CF-12`.
 
 - **The calendar is fixed; only where it starts is not.** 360-day year, 12 months of 30, 36 weeks of
   10, four seasons of 90, a 24-hour day and four six-hour phases. Fixed because every unit then
@@ -27,6 +27,14 @@ yet. Ten cases, `CF-01` to `CF-10`.
   whole job is to defer the read and supply the fallback.
 - **The refusal names the setting** — `CF-09`. A message that says a value is wrong without saying
   which setting held it costs a grep.
+- **The refusal is logged before it is raised**, at `ERROR`, with the exception's own text rather than
+  a second wording of it — `CF-11`. A failed boot scrolls its traceback past; the log is where a
+  consumer goes back to read why the game would not start. Two messages that could drift apart is
+  worse than one.
+- **`calendar.log` stays quiet otherwise** — `CF-12`. A line on every successful boot trains a
+  consumer to ignore the file, which costs exactly when it matters. `config.py` is the one module that
+  imports the shim at module scope, which is what the standards' `log.py` constant exemption exists
+  for.
 
 Also settled and recorded: the three Evennia time settings (`TIME_FACTOR`, `TIME_IGNORE_DOWNTIMES`,
 `TIME_GAME_EPOCH`) are Evennia's. This library reads them, never sets them, and documents what each

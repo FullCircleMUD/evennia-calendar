@@ -61,6 +61,8 @@ never complains about one that is not.
 | CF-08 | The boot check refuses a float, including a whole-numbered one (`1000.0`) | `test_cf_08_the_check_refuses_a_float` |
 | CF-09 | The refusal names `CALENDAR_STARTING_YEAR`, so a consumer knows which setting to fix | `test_cf_09_the_refusal_names_the_setting` |
 | CF-10 | The boot check refuses a boolean, which Python counts as an integer | `test_cf_10_the_check_refuses_a_boolean` |
+| CF-11 | A refusal is written to `calendar.log` at `ERROR`, carrying the same text as the exception, before the exception is raised | `test_cf_11_a_refusal_is_logged_with_the_exception_text` |
+| CF-12 | A check that passes logs nothing | `test_cf_12_a_passing_check_logs_nothing` |
 
 `CF-07` and `CF-08` are separate cases because they defeat different naive implementations: a
 coercing check (`int(value) > 0`) accepts the string, and a bare comparison (`value > 0`) accepts the
@@ -69,6 +71,15 @@ float. One form to write, as the siblings do.
 `CF-10` exists because `bool` is a subclass of `int` in Python: `isinstance(True, int)` is `True` and
 `True >= 0`, so the obvious type check accepts `True` and quietly reads it as year 1. Nothing about
 the value looks wrong afterwards, which is what makes it worth a case of its own.
+
+`CF-11` and `CF-12` are the logging pair. A refusal stops the boot, and the traceback scrolls past —
+so the reason has to be somewhere a consumer can go back and read. **The logged text is the exception
+text, not a second wording of it**: two messages that drift apart is worse than one, and there is
+nothing the log needs to say that the refusal does not.
+
+`CF-12` exists to keep `calendar.log` quiet. A library that writes a line on every successful boot
+trains its consumer to ignore the file, which costs exactly when it matters. The log has one thing to
+say and only says it when it is true.
 
 There is no "every problem in one raise" case yet — with a single setting there can only ever be one
 problem. It lands with the second setting, if there is one.

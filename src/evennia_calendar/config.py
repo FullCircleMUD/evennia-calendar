@@ -10,6 +10,12 @@ default exists for, so ``check_settings()`` never complains about a setting
 that is not declared; it judges only a value the consumer actually set.
 """
 
+# The log shim is imported at module scope, and this is the one module that
+# does it — a refusal has to reach calendar.log as well as the traceback. The
+# dependency runs this way deliberately: log.py imports nothing of ours, so
+# there is no cycle.
+from .log import calendar_log
+
 SETTING_STARTING_YEAR = "CALENDAR_STARTING_YEAR"
 
 # Any year would do — the world has to start somewhere and nothing downstream
@@ -73,4 +79,9 @@ def check_settings():
     if problems:
         from django.core.exceptions import ImproperlyConfigured
 
-        raise ImproperlyConfigured(" ".join(problems))
+        # Logged before it is raised, and with the exception's own text rather
+        # than a second wording of it. The traceback scrolls past; the log is
+        # where a consumer goes back to read why the game would not start.
+        message = " ".join(problems)
+        calendar_log(message, level="ERROR")
+        raise ImproperlyConfigured(message)

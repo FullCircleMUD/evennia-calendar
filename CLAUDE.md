@@ -22,9 +22,9 @@ For the design wiki, read [docs/INDEX.md](docs/INDEX.md).
 
 ## Project status
 
-**Configuration only.** A game can declare what year its world starts in, and a value the library
-cannot use is refused at boot. Nothing derives a date yet — no clock, no season, no phase.
-12 tests passing. See [docs/progress.md](docs/progress.md).
+**Configuration only.** A game can declare what year its world starts in; a value the library cannot
+use is refused at boot and written to `calendar.log`. Nothing derives a date yet — no clock, no
+season, no phase. 14 tests passing. See [docs/progress.md](docs/progress.md).
 
 ## Where to read first
 
