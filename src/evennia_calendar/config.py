@@ -16,6 +16,13 @@ that is not declared; it judges only a value the consumer actually set.
 # there is no cycle.
 from .log import calendar_log
 
+# The calendar's shape, fixed rather than configurable. Every unit divides the
+# one above it with nothing left over — 360 = 4 × 90 = 12 × 30 = 36 × 10 — which
+# a settable year length could not promise. See CLAUDE.md principle 7 before
+# reaching for the idea of making any of these a setting.
+SECONDS_PER_GAME_DAY = 86400
+DAYS_PER_YEAR = 360
+
 SETTING_STARTING_YEAR = "CALENDAR_STARTING_YEAR"
 
 # Any year would do — the world has to start somewhere and nothing downstream

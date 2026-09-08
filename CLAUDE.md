@@ -22,9 +22,10 @@ For the design wiki, read [docs/INDEX.md](docs/INDEX.md).
 
 ## Project status
 
-**Configuration only.** A game can declare what year its world starts in; a value the library cannot
-use is refused at boot and written to `calendar.log`. Nothing derives a date yet — no clock, no
-season, no phase. 14 tests passing. See [docs/progress.md](docs/progress.md).
+**The clock works.** `game_date()` returns the world's year and day of that year, derived from
+Evennia's game seconds. A bad setting is refused at boot and written to `calendar.log`. Still to come:
+month, week, season, hour and phase — each an added field with its own helper.
+29 tests passing. See [docs/progress.md](docs/progress.md).
 
 ## Where to read first
 
@@ -141,6 +142,7 @@ evennia-calendar/
 │   └── evennia_calendar/      # library code (src layout)
 │       ├── __init__.py
 │       ├── apps.py            # AppConfig — ready() runs the boot check
+│       ├── clock.py           # GameDate, game_date(), and the conversions
 │       ├── config.py          # the setting, its accessor, check_settings()
 │       ├── log.py             # shim onto Evennia's logger → calendar.log
 │       └── tests.py           # unit tests, run via runtests.py

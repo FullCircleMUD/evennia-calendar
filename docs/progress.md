@@ -2,6 +2,36 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-08 — the clock, and a date to show for it
+
+29 tests, all passing. `game_date()` returns the world's year and day of that year. Fifteen cases,
+`DN-01` to `DN-04`, `DY-01` to `DY-04`, `YR-01` to `YR-04` and `GD-01` to `GD-03`.
+
+- **Helpers convert, the factory composes.** `_day_number()`, `_day_of_year()` and `_year()` each take
+  integers and return integers; `game_date()` reads the clock, calls them, and assembles a
+  `GameDate`. Chosen for the test shape rather than the code shape — twelve of the fifteen cases are a
+  call and an assertion, needing no clock, no settings and no mocking.
+- **The factory's cases stay at three however many fields arrive.** Every field still to come — month,
+  week, season, hour, phase — is one more helper with its own narrow cases. Exercising each new
+  conversion through the factory instead would mean constructing a `gametime` value that lands on the
+  right day after the offset, and a failure that points at a chain rather than a conversion.
+- **`_year()` takes the starting year as an argument** rather than reading the setting, so it stays a
+  pure conversion and the accessor remains the factory's business. `GD-03` is what proves the factory
+  actually goes through it.
+- **`GD-02` asserts the call is `gametime(absolute=False)`**, not merely that the clock was read. That
+  puts the decision to ignore `TIME_GAME_EPOCH` in a test rather than only in prose.
+- **Floor division throughout, never `datetime`.** `DN-02` and `DN-03` are the pair that catches a
+  rounding implementation; `DY-04` and `YR-04` catch one that handles a single year boundary rather
+  than dividing.
+- **`GameDate` is frozen and nothing stores one.** A consumer holding an instance holds a snapshot.
+
+`gametime` is imported at module scope in `clock.py` — the one place outside `log.py` that reaches for
+Evennia, commented as the standards require, and a single name for the suite to patch.
+
+Still open: how a consumer imports the public surface. `from evennia_calendar.clock import game_date`
+works today; re-exporting from `__init__.py` would read better but runs `clock.py`'s Evennia import
+while Django is still building its app registry, so it needs checking rather than assuming.
+
 ## 2026-09-08 — a game can be configured, and refused
 
 14 tests, all passing. The library has one setting, it is validated at boot, and a refusal reaches

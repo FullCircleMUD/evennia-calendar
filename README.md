@@ -5,8 +5,8 @@ turns that into a date, a season and a time of day.
 
 ## Status
 
-**Configuration only.** You can declare what year your world starts in, and a value the library
-cannot use is refused at boot. Nothing derives a date yet. See
+**The clock works.** `game_date()` gives you the world's year and day of that year. Month, week,
+season, hour and phase are still to come. See
 [docs/progress.md](https://github.com/FullCircleMUD/evennia-calendar/blob/main/docs/progress.md).
 
 ## The problem it solves
