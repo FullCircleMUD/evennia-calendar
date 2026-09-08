@@ -40,6 +40,16 @@ class ScaffoldTests(TestCase):
         """SC-02"""
         self.assertIsNone(calendar_log("scaffold check"))
 
+    def test_sc_03_the_public_surface_resolves_from_the_package_root(self):
+        """SC-03"""
+        self.assertIs(evennia_calendar.game_date, game_date)
+        self.assertIs(evennia_calendar.GameDate, GameDate)
+
+    def test_sc_04_an_unknown_package_attribute_raises(self):
+        """SC-04"""
+        with self.assertRaises(AttributeError):
+            evennia_calendar.game_dat3
+
 
 class StartingYearTests(SimpleTestCase):
     """CF — CALENDAR_STARTING_YEAR, its accessor and its boot check.

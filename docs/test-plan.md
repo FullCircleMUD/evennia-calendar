@@ -48,6 +48,23 @@ One section per function or surface, each with its own prefix and its own table.
 |---|---|---|
 | SC-01 | The package is importable and carries a version | `test_sc_01_the_package_is_importable_and_versioned` |
 | SC-02 | The log shim is a silent no-op outside an Evennia engine, returning `None` rather than raising | `test_sc_02_the_log_shim_is_a_no_op_outside_evennia` |
+| SC-03 | The public surface resolves from the package root — `from evennia_calendar import game_date` gives the same object as `evennia_calendar.clock.game_date` | `test_sc_03_the_public_surface_resolves_from_the_package_root` |
+| SC-04 | An unknown attribute on the package raises `AttributeError` rather than resolving to something | `test_sc_04_an_unknown_package_attribute_raises` |
+
+`SC-03` and `SC-04` cover the package's module-level `__getattr__`. The re-export has to be lazy: this
+package sits in `INSTALLED_APPS`, so its `__init__.py` runs during `django.setup()`, and a plain
+`from .clock import game_date` there pulls in `evennia.utils.gametime`, which reaches for a model
+before the app registry is built — `AppRegistryNotReady`, and the server does not start.
+
+That the export is *lazy* is proven by the suite booting at all. What `SC-03` adds is that it still
+resolves, and `SC-04` that a `__getattr__` cannot quietly answer for names it does not have.
+
+Both were mutation-checked rather than trusted, because both passed the moment they were written.
+Removing `__getattr__` fails `SC-03` alone — `SC-04` still passes there, since Python raises
+`AttributeError` by itself when no `__getattr__` exists, so that case cannot catch an absent one.
+Dropping the `__all__` guard instead fails `SC-04`, and revealed that the guard prevents infinite
+recursion rather than merely silent typos: `from evennia_calendar import clock` inside the function
+re-enters it looking for `clock`. That is recorded at the code.
 
 ### `CF` — `CALENDAR_STARTING_YEAR`
 

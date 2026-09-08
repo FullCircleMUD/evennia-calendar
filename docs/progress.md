@@ -2,6 +2,26 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-08 — a stable public import path
+
+31 tests, all passing. `from evennia_calendar import game_date` works. Two cases, `SC-03` and `SC-04`.
+
+- **The re-export has to be lazy.** The package sits in `INSTALLED_APPS`, so `__init__.py` runs during
+  `django.setup()`, and a plain `from .clock import game_date` there pulls in
+  `evennia.utils.gametime`, which reaches for a model before the app registry is built. Tried it and
+  the server did not start — `AppRegistryNotReady`. A module-level `__getattr__` resolves the names on
+  first use instead.
+- **What it buys is the import path, not the keystrokes.** `__all__` states the contract, so
+  `clock.py` is ours to split or rename without breaking a consumer.
+- **Both cases were mutation-checked**, because both passed the moment they were written. Removing
+  `__getattr__` fails `SC-03` alone; `SC-04` still passes there, since Python raises `AttributeError`
+  by itself when no `__getattr__` exists. So that case cannot catch an absent one, and the plan says
+  so.
+- **The `__all__` guard prevents infinite recursion, not just silent typos.** The second mutation
+  found it: without the guard, `from evennia_calendar import clock` inside the function re-enters the
+  function looking for `clock`. The guard was written for the wrong reason and happened to be right;
+  it is now commented at the code so it is not tidied away.
+
 ## 2026-09-08 — the clock, and a date to show for it
 
 29 tests, all passing. `game_date()` returns the world's year and day of that year. Fifteen cases,

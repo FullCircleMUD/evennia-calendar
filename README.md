@@ -5,8 +5,8 @@ turns that into a date, a season and a time of day.
 
 ## Status
 
-**The clock works.** `game_date()` gives you the world's year and day of that year. Month, week,
-season, hour and phase are still to come. See
+**The clock works.** `from evennia_calendar import game_date` gives you the world's year and day of
+that year. Month, week, season, hour and phase are still to come. See
 [docs/progress.md](https://github.com/FullCircleMUD/evennia-calendar/blob/main/docs/progress.md).
 
 ## The problem it solves

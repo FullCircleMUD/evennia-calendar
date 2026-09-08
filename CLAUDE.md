@@ -22,10 +22,10 @@ For the design wiki, read [docs/INDEX.md](docs/INDEX.md).
 
 ## Project status
 
-**The clock works.** `game_date()` returns the world's year and day of that year, derived from
-Evennia's game seconds. A bad setting is refused at boot and written to `calendar.log`. Still to come:
-month, week, season, hour and phase — each an added field with its own helper.
-29 tests passing. See [docs/progress.md](docs/progress.md).
+**The clock works.** `from evennia_calendar import game_date` returns the world's year and day of that
+year, derived from Evennia's game seconds. A bad setting is refused at boot and written to
+`calendar.log`. Still to come: month, week, season, hour and phase — each an added field with its own
+helper. 31 tests passing. See [docs/progress.md](docs/progress.md).
 
 ## Where to read first
 
