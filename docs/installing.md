@@ -3,8 +3,37 @@
 What a game has to do to run this library. Written as each requirement is decided rather than
 reconstructed afterwards, so it describes what exists.
 
-**The library is at scaffold stage.** The two numbered steps are real. The Evennia settings below are
-a decision a consumer has to make whatever this library ends up looking like, so they are recorded now.
+Three steps, then the background: what Evennia's own time settings do, and what this library's
+calendar is fixed at.
+
+## 1. Install the package
+
+Nothing is published yet, so install from a checkout:
+
+```
+pip install -e path/to/evennia-calendar
+```
+
+## 2. Add the app
+
+In your settings:
+
+```python
+INSTALLED_APPS += ["evennia_calendar"]
+```
+
+**This is what runs the boot check.** Leave it out and the library is importable and validates
+nothing, so a mistyped `CALENDAR_STARTING_YEAR` reaches the arithmetic instead of being refused.
+
+## 3. Choose what year your world starts in
+
+Optional — leave it out and your world starts in year 1000.
+
+```python
+CALENDAR_STARTING_YEAR = 850
+```
+
+Detail and the rules it has to satisfy are under [Optional settings](#optional-settings) below.
 
 ## Evennia's time settings, and what this library does with them
 
@@ -41,42 +70,19 @@ A 24-hour game day that should pass in one real hour is `TIME_FACTOR = 24`; in t
 | `True` | elapsed **wall-clock** time since first server start | The world keeps running while the game is down. A week's outage at `TIME_FACTOR = 24` advances the calendar by 168 game days. Still anchored to first server start, so a database wipe still resets it |
 
 Neither branch survives a database wipe, because both measure from a first-start timestamp held in
-`ServerConfig`. A game that rebuilds its world regularly and wants calendar continuity across a
-rebuild reads the current date before shutting down and carries it forward in the library's own
-starting-date settings.
-
-`[TBD — needs discussion: those starting-date settings. Starting year and starting day were agreed in
-principle; the names and defaults are not settled.]`
+`ServerConfig`. A game that rebuilds its world regularly can carry the year forward by reading the
+date before shutting down and raising `CALENDAR_STARTING_YEAR` to match. The year survives that way;
+the position within the year does not, because there is no starting-day setting — the world restarts
+on day 0 of whatever year you name.
 
 ### `TIME_GAME_EPOCH` — read by Evennia, not by us
 
 It sets the game clock's value at first server start, expressed as a bare count of game seconds. To
-mean "year 850" you would write `850 × days_per_year × seconds_per_day` and put that number in your
-settings.
+mean "year 850" you would write `850 × 360 × 86400` and put that number in your settings.
 
 This library reads `gametime(absolute=False)`, which zeroes that term. Where the calendar starts is
-expressed in the library's own settings instead, in years and days rather than a timestamp — so
-setting `TIME_GAME_EPOCH` will not move our dates. It still affects anything else in your game calling
-`gametime(absolute=True)`.
-
-## 1. Install the package
-
-Nothing is published yet, so install from a checkout:
-
-```
-pip install -e path/to/evennia-calendar
-```
-
-## 2. Add the app
-
-In your settings:
-
-```python
-INSTALLED_APPS += ["evennia_calendar"]
-```
-
-This is what runs the boot check. Leave it out and the library is importable, validates nothing, and
-a mistyped `CALENDAR_STARTING_YEAR` reaches the arithmetic instead of being refused.
+expressed as a year in our own setting instead — so setting `TIME_GAME_EPOCH` will not move our dates.
+It still affects anything else in your game calling `gametime(absolute=True)`.
 
 ## Required settings
 
@@ -86,16 +92,12 @@ None. This library has one setting and it is optional.
 
 ### `CALENDAR_STARTING_YEAR` — what year the world begins in
 
-```python
-CALENDAR_STARTING_YEAR = 850
-```
-
 **Default: `1000`.** Leave it out and your world starts in year 1000, which is a perfectly good year
 — the setting exists for games that want a particular one.
 
 **If you set it, it must be zero or a positive integer.** A value that is not — a negative number,
-`"850"`, `850.0` — is refused at boot with the setting named. There is one form to write. Year `0` is
-allowed: a world may begin at zero.
+`"850"`, `850.0`, `True` — is refused at boot with the setting named. There is one form to write.
+Year `0` is allowed: a world may begin at zero.
 
 It shifts the year and nothing else. Day-of-year, season, month and phase all come from the position
 *within* the year, which the offset does not move — so whatever you set, the world still begins on
