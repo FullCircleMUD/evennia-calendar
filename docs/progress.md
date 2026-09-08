@@ -2,6 +2,30 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-08 — the calendar's vocabulary
+
+35 tests, all passing. `Season`, `DAY_NAMES` and `MONTH_NAMES` declared in `config.py`. Nothing
+indexes them yet — the fields that will are the next slice. Four cases, `CN-01` to `CN-04`.
+
+- **`Season` is an enum, the names are tuples.** A game branches on the season, so `Season.WINTER`
+  earns an enum over `season == 3`. The day and month names are looked up by index and displayed,
+  nothing computes from them, so a tuple a consumer can swap in one line beats something to subclass.
+- **`Season`'s values are its position in the year**, making the lookup `Season(day_of_year // 90)`
+  with no mapping table in between. `SPRING = 0` is what makes
+  [installing.md](installing.md)'s promise true — that every world begins on day 0, the first day of
+  spring — rather than an arbitrary ordering.
+- **The lengths are load-bearing and have their own cases.** Eleven months does not raise; it returns
+  the wrong month for a third of the year. `CN-01` and `CN-02` are both needed, because pinning the
+  values 0–3 does not stop a fifth member being added beside them.
+- **The names are real and checked against sources**, not invented: the ten days are the Balinese
+  Pawukon calendar's Dasawara cycle, the twelve months are from Old Javanese inscriptions. Diacritics
+  stripped — terminals vary and players may end up typing them.
+- **They are placeholders and say so at the declaration.** Naming the days of an invented world is the
+  consumer's business; the library ships a working set so it is not empty, and expects to be
+  overridden.
+- **No case pins the individual names.** Nothing computes from the strings, so such a test would only
+  restate the tuple and be edited every time the tuple was. Length and order are what matter.
+
 ## 2026-09-08 — a stable public import path
 
 31 tests, all passing. `from evennia_calendar import game_date` works. Two cases, `SC-03` and `SC-04`.

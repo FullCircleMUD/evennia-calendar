@@ -123,6 +123,21 @@ a knob rather than offered and then broken.
 
 If your game needs a different calendar, this library is the wrong one.
 
+### The day and month names are placeholders
+
+The library ships ten day names and twelve month names so it is not empty. They are real — the days
+are the Balinese Pawukon calendar's Dasawara cycle, the months are from Old Javanese inscriptions —
+and they are almost certainly not what your world calls them.
+
+You are not expected to override anything. A `GameDate` carries **numbers**: `day_of_week` 0–9 and
+`month` 0–11. `DAY_NAMES` and `MONTH_NAMES` are a convenience for games with no opinion. A game with
+one indexes its own tuple with the same number and never imports ours.
+
+Seasons are different. `Season` is an enum rather than a name, because a game branches on it —
+`Season.WINTER`, not `season == 3` — and spring, summer, autumn and winter are what those seasons are
+called in English rather than something we invented. What your world *displays* for them is still
+yours.
+
 ## What is not checked for you
 
 - **`INSTALLED_APPS`.** Leave the library out of it and `AppConfig.ready()` never runs, so nothing

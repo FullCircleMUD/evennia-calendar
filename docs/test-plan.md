@@ -20,6 +20,7 @@ seems likely.
 |---|---|
 | `SC` | The scaffold — the library is installed and the runner reaches it |
 | `CF` | `CALENDAR_STARTING_YEAR` — its accessor, and the boot check that judges a value the consumer set |
+| `CN` | The calendar's vocabulary — `Season`, `DAY_NAMES` and `MONTH_NAMES` |
 | `DN` | `_day_number()` — elapsed game seconds to an absolute day count |
 | `DY` | `_day_of_year()` — an absolute day count to a position within the year |
 | `YR` | `_year()` — an absolute day count and a starting year to the year |
@@ -106,6 +107,31 @@ say and only says it when it is true.
 
 There is no "every problem in one raise" case yet — with a single setting there can only ever be one
 problem. It lands with the second setting, if there is one.
+
+### `CN` — the calendar's vocabulary
+
+Three declarations in `config.py`, all indexed by arithmetic on `day_of_year`. Their **lengths are
+load-bearing**: a tuple of eleven months does not raise, it silently returns the wrong month for a
+third of the year, or an `IndexError` on the last one.
+
+`Season` is an enum because games branch on it — `Season.WINTER` beats `season == 3`. The day and
+month names are tuples because they are display strings and the part that is invention, so a consumer
+replacing them should not have to subclass anything.
+
+| ID | Case | Test function |
+|---|---|---|
+| CN-01 | `Season` has exactly four members | `test_cn_01_there_are_exactly_four_seasons` |
+| CN-02 | The seasons run spring, summer, autumn, winter with values 0–3, so `Season(0)` is `SPRING` | `test_cn_02_the_seasons_run_spring_first_with_values_zero_to_three` |
+| CN-03 | `DAY_NAMES` has exactly ten entries, one per day of the week | `test_cn_03_there_are_exactly_ten_day_names` |
+| CN-04 | `MONTH_NAMES` has exactly twelve entries, one per month | `test_cn_04_there_are_exactly_twelve_month_names` |
+
+`CN-01` and `CN-02` are both needed: pinning the values 0–3 does not stop a fifth member being added
+alongside them.
+
+`CN-02` is not data testing itself — the order is a documented promise. [installing.md](installing.md)
+tells a consumer their world begins on day 0, the first day of spring, and that is only true while
+`SPRING` is 0. The individual day and month *names* get no such case: nothing computes from them, so
+a test would only restate the tuple and would be edited every time the tuple was.
 
 ### The shape: helpers convert, the factory composes
 

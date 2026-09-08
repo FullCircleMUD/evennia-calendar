@@ -20,9 +20,12 @@ from evennia_calendar.clock import (
     game_date,
 )
 from evennia_calendar.config import (
+    DAY_NAMES,
     DEFAULT_STARTING_YEAR,
+    MONTH_NAMES,
     SECONDS_PER_GAME_DAY,
     SETTING_STARTING_YEAR,
+    Season,
     check_settings,
     get_starting_year,
 )
@@ -130,6 +133,29 @@ class StartingYearTests(SimpleTestCase):
             check_settings()
 
         logged.assert_not_called()
+
+
+class CalendarNamesTests(TestCase):
+    """CN — the calendar's vocabulary."""
+
+    def test_cn_01_there_are_exactly_four_seasons(self):
+        """CN-01"""
+        self.assertEqual(len(Season), 4)
+
+    def test_cn_02_the_seasons_run_spring_first_with_values_zero_to_three(self):
+        """CN-02"""
+        self.assertEqual(
+            [Season(index).name for index in range(4)],
+            ["SPRING", "SUMMER", "AUTUMN", "WINTER"],
+        )
+
+    def test_cn_03_there_are_exactly_ten_day_names(self):
+        """CN-03"""
+        self.assertEqual(len(DAY_NAMES), 10)
+
+    def test_cn_04_there_are_exactly_twelve_month_names(self):
+        """CN-04"""
+        self.assertEqual(len(MONTH_NAMES), 12)
 
 
 class DayNumberTests(TestCase):

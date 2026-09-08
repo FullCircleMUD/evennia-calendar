@@ -10,6 +10,8 @@ default exists for, so ``check_settings()`` never complains about a setting
 that is not declared; it judges only a value the consumer actually set.
 """
 
+from enum import Enum
+
 # The log shim is imported at module scope, and this is the one module that
 # does it — a refusal has to reach calendar.log as well as the traceback. The
 # dependency runs this way deliberately: log.py imports nothing of ours, so
@@ -22,6 +24,64 @@ from .log import calendar_log
 # reaching for the idea of making any of these a setting.
 SECONDS_PER_GAME_DAY = 86400
 DAYS_PER_YEAR = 360
+
+
+class Season(Enum):
+    """The four seasons, ninety days each.
+
+    The values are the season's position in the year, so a season is looked up
+    as ``Season(day_of_year // 90)``. Spring is 0 because day 0 of every year is
+    the first day of spring — a promise made to consumers in
+    docs/installing.md, and true only while this order holds.
+
+    An enum rather than a tuple of names: a game branches on the season, and
+    ``Season.WINTER`` says what ``season == 3`` does not.
+    """
+
+    SPRING = 0
+    SUMMER = 1
+    AUTUMN = 2
+    WINTER = 3
+
+
+# The ten days of the week, from the Balinese Pawukon calendar's Dasawara
+# cycle, and the twelve months, from the Old Javanese inscriptions. Both are
+# real, both are indexed by arithmetic on the day of the year, and both are
+# placeholders a game is expected to replace — naming the days of an invented
+# world is the consumer's business, not a library's.
+#
+# Tuples rather than enums because nothing computes from the strings: they are
+# looked up by index and displayed. A game swapping them writes one tuple.
+#
+# The lengths are load-bearing. Ten and twelve are what the arithmetic divides
+# by; a tuple one short does not raise, it returns the wrong name.
+DAY_NAMES = (
+    "Pandita",
+    "Pati",
+    "Suka",
+    "Duka",
+    "Sri",
+    "Manuh",
+    "Manusa",
+    "Raja",
+    "Dewa",
+    "Raksasa",
+)
+
+MONTH_NAMES = (
+    "Caitra",
+    "Waisakha",
+    "Jyestha",
+    "Ashadha",
+    "Sravana",
+    "Bhadrapada",
+    "Asvina",
+    "Kartika",
+    "Margasirsa",
+    "Pausa",
+    "Magha",
+    "Phalguna",
+)
 
 SETTING_STARTING_YEAR = "CALENDAR_STARTING_YEAR"
 
