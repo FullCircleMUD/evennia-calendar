@@ -74,13 +74,20 @@ class GameDate:
     phase: int
 
 
-def _day_number(elapsed_seconds: int) -> int:
+def _day_number(elapsed_seconds: float) -> int:
     """Return the absolute day count for a number of elapsed game seconds.
 
     Floor division, not rounding: most of a day is still that day, and a day
     only turns over when it is complete.
+
+    **Coerced to `int`, because `gametime()` returns a float** — `time.time()`
+    does, so everything downstream of it does too. Floor division on a float
+    gives a float, and a float would travel the whole way to a consumer writing
+    ``f"{date.hour:02d}"`` and raise there. This and ``_seconds_into_day()``
+    are the two places the raw clock value enters, so coercing here means every
+    helper after them is integer arithmetic.
     """
-    return elapsed_seconds // SECONDS_PER_GAME_DAY
+    return int(elapsed_seconds // SECONDS_PER_GAME_DAY)
 
 
 def _day_of_year(day_number: int) -> int:
@@ -126,13 +133,14 @@ def _season(day_of_year: int) -> Season:
     return Season(day_of_year // DAYS_PER_SEASON)
 
 
-def _seconds_into_day(elapsed_seconds: int) -> int:
+def _seconds_into_day(elapsed_seconds: float) -> int:
     """Return how far into the day a number of elapsed game seconds falls.
 
     The remainder ``_day_number()`` discards — the two take the same input and
-    divide it between them.
+    divide it between them, and both coerce to ``int`` for the reason given
+    there.
     """
-    return elapsed_seconds % SECONDS_PER_GAME_DAY
+    return int(elapsed_seconds % SECONDS_PER_GAME_DAY)
 
 
 def _hour(seconds_into_day: int) -> int:

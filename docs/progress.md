@@ -2,6 +2,51 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-10 — run against a real game, which found two things the suite could not
+
+86 tests. A demo gamedir under `examples/` boots a real Evennia server with the library installed, and
+everything the library claims to do was watched happening in it.
+
+**Proven live:** `game_date()` through a `gametime` command, the hour advancing between calls;
+`phase_changed` and `day_changed` announcing; a consumer-registered `market_bell` firing on a
+six-hour cycle, which is not one of the library's units; all three arriving on the same tick at a day
+boundary, coarse and fine together. Reload survival too, unplanned — the server was reloaded
+mid-session and the signals kept firing, so `at_server_start()` re-registered and re-connected after
+the module state died.
+
+**Two bugs, both from fixtures that encoded an assumption rather than the world's behaviour:**
+
+- **Every field came back a float.** `gametime()` returns one, because `time.time()` does, and floor
+  division on a float gives a float. Every case in the suite patched the clock with an *integer*, so
+  88 passing tests said nothing about it — and the first thing a consumer wrote,
+  `f"{date.hour:02d}"`, raised. Fixed by coercing at `_day_number()` and `_seconds_into_day()`, the
+  two places the raw clock value enters, so every helper after them is integer arithmetic. `GD-04`
+  now feeds a float and asserts every field is an `int`.
+- **The boot check's logging never worked.** `check_settings()` runs from `AppConfig.ready()` during
+  `django.setup()`, and Evennia's `log_file()` defers every write to the reactor's thread pool, which
+  does not exist yet — the deferred is created, never runs, and dies with the process, leaving a
+  zero-byte file. `CF-11` and `CF-12` passed throughout because they mocked the shim and asserted it
+  was called. Both retired, the log call removed, and **the exception is the only channel at boot**.
+  Recorded as a project-level rule in
+  [library-standards.md](../../../design/library-standards.md) § Nothing can be logged from
+  `AppConfig.ready()`, since it applies to every library.
+
+**And one design property proven by accident.** The float bug was breaking the demo's receivers on
+every watch change before anyone noticed, and `send_robust` did exactly what it was built to do — the
+failure was logged with the receiver's name and a full traceback, and the clock kept ticking. Nothing
+would have tested that deliberately.
+
+Also learned: **the detection window is exactly `TIME_FACTOR` game seconds**, because the tick is
+always one real second. The demo runs at 360, so announcements land up to six game minutes late and
+you can see it. At FCM's 24 the window is 24 game seconds, which displays as `HH:00` — at any factor
+of 60 or below an hourly announcement always reads on the hour.
+
+Still untested live: `week`, `month`, `season` and `year` firing. They go through the same
+`_UNIT_SIGNALS` loop as the three that did, and are unit-tested. Accepted on that basis.
+
+Not yet run against a real game: nothing. That line has been in this log since the scaffold and is
+now gone.
+
 ## 2026-09-10 — the clock announces, and a consumer can add their own
 
 87 tests, all passing. Feature complete against what it set out to do, untried against a real game.

@@ -28,17 +28,20 @@ For the design wiki, read [docs/INDEX.md](docs/INDEX.md).
 
 ## Project status
 
-**Feature complete, untried against a real game.** 87 tests passing.
+**Feature complete, and proven against a real game.** 86 tests passing, plus a demo gamedir under
+`examples/` that boots a real Evennia server with the library installed.
 
 `from evennia_calendar import game_date` returns the whole date and time of day — ten fields, every
-calendar position counting from one, the clock from zero. A bad setting is refused at boot and written
-to `calendar.log`.
+calendar position counting from one, the clock from zero. A bad setting is refused at boot — by
+raising, which is the only channel that early; see [docs/progress.md](docs/progress.md).
 
 `start_calendar_clock()` ticks once a real second and sends a Django signal for each unit that turned
 over — seven built-ins, plus any a consumer registers with `register_signal()` for a condition of
 their own. See [docs/progress.md](docs/progress.md).
 
-What is left is a demo gamedir and a run against real Evennia. Nothing here has touched a live server.
+The live run found two bugs the suite could not — every field arriving as a float, and boot-check
+logging that never wrote a line. Both are recorded in [docs/progress.md](docs/progress.md); the second
+became a project-level rule in [library-standards.md](../../design/library-standards.md).
 
 ## Where to read first
 
@@ -169,6 +172,9 @@ evennia-calendar/
 ├── pyproject.toml
 ├── runtests.py                # standalone test runner; no gamedir required
 ├── .gitignore
+├── examples/                  # a real Evennia gamedir, for proving it outside the suite
+│   ├── requirements.txt       # evennia, sqlean on macOS, the library editable
+│   └── demo/                  # the gamedir; venv/ beside it, both gitignored
 ├── docs/                      # design wiki (humans + LLMs)
 │   ├── INDEX.md
 │   ├── installing.md          # what a consumer declares; grows as we decide
@@ -198,7 +204,10 @@ the suite's baseline and a case wanting a value overrides one in. Declaring it t
 
 No `contrib/` — nothing opt-in exists, and the standards forbid scaffolding one empty.
 
-No `examples/` — no demo gamedir yet. It lands when there is a surface to exercise end to end.
+`examples/` holds a demo gamedir with its own venv, both gitignored. It is a real Evennia server
+with the library installed, used to prove the library works outside the suite — which is how the two
+bugs recorded in [docs/progress.md](docs/progress.md) were found. **Do not start it without asking**;
+more than one game may be running from this machine.
 
 ## Tools and environment
 

@@ -159,24 +159,6 @@ class StartingYearTests(SimpleTestCase):
         with self.assertRaises(ImproperlyConfigured):
             check_settings()
 
-    @override_settings(CALENDAR_STARTING_YEAR=-1)
-    def test_cf_11_a_refusal_is_logged_with_the_exception_text(self):
-        """CF-11"""
-        with mock.patch("evennia_calendar.config.calendar_log") as logged:
-            with self.assertRaises(ImproperlyConfigured) as caught:
-                check_settings()
-
-        logged.assert_called_once()
-        self.assertEqual(logged.call_args.args[0], str(caught.exception))
-        self.assertEqual(logged.call_args.kwargs.get("level"), "ERROR")
-
-    def test_cf_12_a_passing_check_logs_nothing(self):
-        """CF-12"""
-        with mock.patch("evennia_calendar.config.calendar_log") as logged:
-            check_settings()
-
-        logged.assert_not_called()
-
 
 class CalendarNamesTests(TestCase):
     """CN — the calendar's vocabulary."""
@@ -853,6 +835,31 @@ class GameDateTests(SimpleTestCase):
             ),
             (852, 6, 1, 6, 1, 6, Season.SPRING, 13, 32, 4),
         )
+
+    def test_gd_04_a_float_clock_still_gives_integer_fields(self):
+        """GD-04"""
+        # gametime() returns a float, because time.time() does. Every case in
+        # this suite patched it with an int, so nothing caught that floor
+        # division on a float yields a float — and every field arrived as one.
+        elapsed = float(SECONDS_PER_GAME_DAY) * 725 + 13 * 3600 + 32.75 * 60
+        with mock.patch(
+            "evennia_calendar.clock.gametime", return_value=elapsed
+        ):
+            date = game_date()
+
+        for field in (
+            "year",
+            "day_of_year",
+            "month",
+            "day_of_month",
+            "week",
+            "day_of_week",
+            "hour",
+            "minute",
+            "phase",
+        ):
+            value = getattr(date, field)
+            self.assertIsInstance(value, int, f"{field} is {type(value)}")
 
     def test_gd_03_the_year_comes_through_the_accessor(self):
         """GD-03"""

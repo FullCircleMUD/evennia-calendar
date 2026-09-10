@@ -22,12 +22,6 @@ from .signals import (
     year_changed,
 )
 
-# The log shim is imported at module scope, and this is the one module that
-# does it — a refusal has to reach calendar.log as well as the traceback. The
-# dependency runs this way deliberately: log.py imports nothing of ours, so
-# there is no cycle.
-from .log import calendar_log
-
 # The calendar's shape, fixed rather than configurable. Every unit divides the
 # one above it with nothing left over — 360 = 4 × 90 = 12 × 30 = 36 × 10 — which
 # a settable year length could not promise. See CLAUDE.md principle 7 before
@@ -218,9 +212,13 @@ def check_settings():
     if problems:
         from django.core.exceptions import ImproperlyConfigured
 
-        # Logged before it is raised, and with the exception's own text rather
-        # than a second wording of it. The traceback scrolls past; the log is
-        # where a consumer goes back to read why the game would not start.
-        message = " ".join(problems)
-        calendar_log(message, level="ERROR")
-        raise ImproperlyConfigured(message)
+        # **The exception is the only channel here.** Nothing is logged,
+        # because nothing can be: this runs from AppConfig.ready() during
+        # django.setup(), and Evennia's log_file() defers every write to the
+        # reactor's thread pool, which does not exist yet. The deferred is
+        # created, never runs, and dies with the process. Verified — it leaves
+        # a zero-byte log file and no line.
+        #
+        # So the message carries everything a consumer needs, and it reaches
+        # whoever ran the command. See design/library-standards.md § Logging.
+        raise ImproperlyConfigured(" ".join(problems))

@@ -9,7 +9,7 @@ passage of time in a game world, in every form a game wants to read it.
 
 ## Status
 
-**Feature complete, untried against a real game.** `from evennia_calendar import game_date` returns
+**Feature complete, and run against a real game.** `from evennia_calendar import game_date` returns
 the whole date and time of day. Start the clock and it sends a Django signal when the hour, watch,
 day, week, month, season or year turns over — or one of your own, on a condition you define. See
 [docs/progress.md](https://github.com/FullCircleMUD/evennia-calendar/blob/main/docs/progress.md).

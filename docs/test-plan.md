@@ -96,8 +96,6 @@ never complains about one that is not.
 | CF-08 | The boot check refuses a float, including a whole-numbered one (`1000.0`) | `test_cf_08_the_check_refuses_a_float` |
 | CF-09 | The refusal names `CALENDAR_STARTING_YEAR`, so a consumer knows which setting to fix | `test_cf_09_the_refusal_names_the_setting` |
 | CF-10 | The boot check refuses a boolean, which Python counts as an integer | `test_cf_10_the_check_refuses_a_boolean` |
-| CF-11 | A refusal is written to `calendar.log` at `ERROR`, carrying the same text as the exception, before the exception is raised | `test_cf_11_a_refusal_is_logged_with_the_exception_text` |
-| CF-12 | A check that passes logs nothing | `test_cf_12_a_passing_check_logs_nothing` |
 
 `CF-07` and `CF-08` are separate cases because they defeat different naive implementations: a
 coercing check (`int(value) > 0`) accepts the string, and a bare comparison (`value > 0`) accepts the
@@ -107,14 +105,15 @@ float. One form to write, as the siblings do.
 `True >= 0`, so the obvious type check accepts `True` and quietly reads it as year 1. Nothing about
 the value looks wrong afterwards, which is what makes it worth a case of its own.
 
-`CF-11` and `CF-12` are the logging pair. A refusal stops the boot, and the traceback scrolls past —
-so the reason has to be somewhere a consumer can go back and read. **The logged text is the exception
-text, not a second wording of it**: two messages that drift apart is worse than one, and there is
-nothing the log needs to say that the refusal does not.
+**`check_settings()` logs nothing, and cannot.** `CF-11` and `CF-12` were written to cover a refusal
+reaching `calendar.log`, and a live boot proved they covered nothing: the check runs from
+`AppConfig.ready()` during `django.setup()`, and Evennia's `log_file()` defers every write to the
+reactor's thread pool, which does not exist yet. The deferred is created, never runs, and dies with
+the process — leaving a zero-byte file and no line.
 
-`CF-12` exists to keep `calendar.log` quiet. A library that writes a line on every successful boot
-trains its consumer to ignore the file, which costs exactly when it matters. The log has one thing to
-say and only says it when it is true.
+Both cases passed anyway, because they mocked the shim and asserted it was called. They are retired.
+The exception is the only channel at boot, so the message carries everything a consumer needs. See
+`design/library-standards.md` § Logging.
 
 There is no "every problem in one raise" case yet — with a single setting there can only ever be one
 problem. It lands with the second setting, if there is one.
@@ -301,6 +300,14 @@ snapshot rather than something that goes stale in place.
 | GD-01 | `GameDate` is frozen — assigning to a field raises rather than mutating the instance | `test_gd_01_the_dataclass_is_frozen` |
 | GD-02 | `game_date()` reads the clock and returns **every** field composed from it | `test_gd_02_the_factory_reads_the_clock_and_composes_every_field` |
 | GD-03 | The year comes through the `CALENDAR_STARTING_YEAR` accessor, so an undeclared setting gives the default of 1000 | `test_gd_03_the_year_comes_through_the_accessor` |
+| GD-04 | `gametime()` returns a float, and every numeric field on the result is an `int` | `test_gd_04_a_float_clock_still_gives_integer_fields` |
+
+`GD-04` exists because the suite was wrong and a live server proved it. Every case patched the clock
+with an integer; `gametime()` returns a float, because `time.time()` does. Floor division on a float
+gives a float, so every field arrived as one — and the first thing a consumer wrote,
+`f"{date.hour:02d}"`, raised `Unknown format code 'd' for object of type 'float'`.
+
+Nothing in the arithmetic was wrong. The fixture was, and 87 passing tests said nothing about it.
 
 Three cases, and they stay three however many fields are added. `GD-02` proves the clock is read and
 the helpers are composed; `GD-03` proves the offset arrives through the accessor rather than being

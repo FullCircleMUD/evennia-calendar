@@ -1,0 +1,22 @@
+# Dependencies for the demo gamedir.
+#
+# Installed into examples/venv/, which is separate from the library's own venv
+# at the repo root — the demo runs a real Evennia server, the library's suite
+# does not.
+#
+#     cd examples
+#     python -m venv venv
+#     ./venv/bin/pip install -r requirements.txt
+
+evennia
+
+# macOS only. Apple's system SQLite drives sqlite3_initialize() through
+# libdispatch, which does not survive the fork `evennia start` uses to
+# daemonize — the server then deadlocks on its first query, silently, with
+# nothing in any log. sqlean.py ships its own statically-linked SQLite, and
+# the demo settings swap it in, gated on darwin.
+sqlean.py; sys_platform == "darwin"
+
+# The library under demonstration, installed editable so an edit in src/ is
+# live in the demo without reinstalling.
+-e ..
