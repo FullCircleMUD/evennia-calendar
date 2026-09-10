@@ -3,8 +3,9 @@
 What a game has to do to run this library. Written as each requirement is decided rather than
 reconstructed afterwards, so it describes what exists.
 
-Three steps, then the background: what Evennia's own time settings do, and what this library's
-calendar is fixed at.
+Four steps, then the background: what Evennia's own time settings do, and what this library's
+calendar is fixed at. The fourth is optional — the first three give you the date on demand, and the
+fourth is for being told when it changes.
 
 ## 1. Install the package
 
@@ -78,6 +79,60 @@ f"{date.day_of_month} {MONTH_NAMES[date.month - 1]}, year {date.year}"
 
 **Nothing is stored.** Every call builds a new `GameDate` from the clock, so an instance you hold on
 to is a snapshot. Call again for the current date rather than keeping one around.
+
+## 4. Start the clock, if you want to be told when the date changes
+
+Optional. Everything above works without it — `game_date()` reads the clock whenever you ask. This is
+for reacting *at the moment* something turns over: announcing a new season, dimming the lights at
+dusk, opening a market.
+
+```python
+# server/conf/at_server_startstop.py
+from evennia_calendar.service import start_calendar_clock
+
+def at_server_start():
+    start_calendar_clock()
+```
+
+It ticks once a real second, compares the date against the one it last saw, and sends a signal for
+each unit that turned over. Starting it twice is a no-op, which matters because Evennia runs
+`at_server_start()` on reload as well as boot.
+
+### The seven signals
+
+```python
+from evennia_calendar.signals import (
+    hour_changed, phase_changed, day_changed, week_changed,
+    month_changed, season_changed, year_changed,
+)
+```
+
+Each carries `previous` and `current` — the two `GameDate`s — and nothing else. The signal's name says
+which unit turned over; anything else you want is on the two dates.
+
+```python
+def on_season(sender, previous, current, **kwargs):
+    announce(f"The season turns to {current.season.name.lower()}.")
+
+season_changed.connect(on_season)
+```
+
+**A coarse unit never turns over alone.** A new season is also a new day, watch and hour, so
+`season_changed`, `day_changed`, `phase_changed` and `hour_changed` all fire on that tick. Subscribe to
+the coarsest one you care about.
+
+**Connect from something that runs at startup.** Signal connections are module state and do not
+survive a reload.
+
+**And hold a reference to your handler.** `Signal.connect()` keeps receivers *weakly* — a lambda or a
+function defined inside `at_server_start()` is collected the moment that function returns, and your
+handler silently never runs. Use a module-level function, or pass `weak=False`. Full explanation in
+[custom-signals.md](custom-signals.md#holding-on-to-your-receiver).
+
+### Your own signals
+
+The clock will fire a signal of yours on a condition you define — a market every tenth day, a
+festival, a fortnight. See [custom-signals.md](custom-signals.md).
 
 ## Evennia's time settings, and what this library does with them
 

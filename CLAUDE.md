@@ -28,13 +28,17 @@ For the design wiki, read [docs/INDEX.md](docs/INDEX.md).
 
 ## Project status
 
-**Working, untried against a real game.** `from evennia_calendar import game_date` returns the whole
-date and time of day — ten fields, every calendar position counting from one, the clock from zero. A
-bad setting is refused at boot and written to `calendar.log`. 57 tests passing.
+**Feature complete, untried against a real game.** 87 tests passing.
 
-Still to come: **announcing changes.** A one-second `LoopingCall` that compares what it last saw and
-fires Django signals when the watch, day, month or season turns over, so consumers subscribe rather
-than polling. Agreed, not built. See [docs/progress.md](docs/progress.md).
+`from evennia_calendar import game_date` returns the whole date and time of day — ten fields, every
+calendar position counting from one, the clock from zero. A bad setting is refused at boot and written
+to `calendar.log`.
+
+`start_calendar_clock()` ticks once a real second and sends a Django signal for each unit that turned
+over — seven built-ins, plus any a consumer registers with `register_signal()` for a condition of
+their own. See [docs/progress.md](docs/progress.md).
+
+What is left is a demo gamedir and a run against real Evennia. Nothing here has touched a live server.
 
 ## Where to read first
 
@@ -42,8 +46,13 @@ than polling. Agreed, not built. See [docs/progress.md](docs/progress.md).
    starts here**, not in the code. **Start here.**
 2. [README.md](README.md) — what the library is and its status.
 3. [docs/INDEX.md](docs/INDEX.md) — map of all design docs.
-4. [docs/installing.md](docs/installing.md) — what a consumer declares.
-5. [docs/interoperability.md](docs/interoperability.md) — this library against its siblings.
+4. [docs/installing.md](docs/installing.md) — what a consumer declares, and the seven signals.
+5. [docs/custom-signals.md](docs/custom-signals.md) — a consumer's own signal, on their own condition.
+6. [docs/interoperability.md](docs/interoperability.md) — this library against its siblings.
+
+**`clock.py` answers what time it is. `service.py` runs and says when it turned over.** That split is
+why the comparison is a pure function of two dates rather than a method on the loop — the arithmetic
+is testable without a clock, and the lifecycle without a reactor.
 
 **FCM's day/night and season services describe the system being extracted, not this library.** They
 are the source to read for how it behaves today, not a specification for what belongs here.
@@ -65,9 +74,13 @@ Every implementation decision must respect them.
    rationale.
 
 4. **The calendar is derived, never stored.** Every value the library reports is a function of the
-   number Evennia hands back. No tables, no `ndb`, no persisted state — so it survives a reload, needs
-   no migration, and every process in a multi-process deployment computes the same answer without
-   coordinating.
+   number Evennia hands back. No tables, no `ndb`, no migration — so it survives a reload and every
+   process in a multi-process deployment computes the same answer without coordinating.
+
+   The clock in `service.py` does remember the last date it saw, and consumers' registrations live
+   beside it. That is **transient module state, not calendar state**: it dies with the Server process
+   and is rebuilt from the clock on the next tick, and nothing about a date depends on it. The
+   principle protects the derivation, not a vow that the library holds nothing.
 
 5. **Evennia owns the clock; this library owns the calendar.** We read the game seconds and do our own
    integer division. **Never `datetime`.** Reading the game timestamp through `datetime.fromtimestamp`
@@ -169,6 +182,8 @@ evennia-calendar/
 │       ├── apps.py            # AppConfig — ready() runs the boot check
 │       ├── clock.py           # GameDate, game_date(), and the conversions
 │       ├── config.py          # the setting, its accessor, check_settings()
+│       ├── service.py         # the LoopingCall, the comparison, the dispatch
+│       ├── signals.py         # the seven Signal objects consumers connect to
 │       ├── log.py             # shim onto Evennia's logger → calendar.log
 │       └── tests.py           # unit tests, run via runtests.py
 └── tests/                     # standalone test infrastructure

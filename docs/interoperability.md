@@ -9,10 +9,15 @@ coupling** — followed either by the constraints that apply or by an explicit c
 is clear in terms of what this library does. "No known issues" is not a clearance.
 
 **Nothing here has run against a real game yet**, so every statement below is provisional. The
-clearances rest on three properties the library holds today: it stores nothing, it reads Evennia's
-clock rather than the database, and it searches for and holds no game objects. The transition clock
-still to be built will change the first of those — it will remember the last date it saw, in module
-state — so re-confirm rather than inheriting these once it lands.
+clearances rest on three properties the library holds today: it owns no tables and issues no ORM
+writes, it reads Evennia's clock rather than the database, and it searches for and holds no game
+objects.
+
+One qualification since the clock landed: the library is no longer entirely passive. It runs a Twisted
+`LoopingCall` once a real second and remembers the last date it saw in module state, and it sends
+Django signals to whatever a consumer connected. It still writes nothing and reads no game object —
+but "does nothing until asked" is no longer true, and a sibling's clearance that rested on it should
+be re-read.
 
 **A recurring theme, stated once.** Several siblings are ones a consumer would plausibly *compose*
 with this library — spawning that varies by season, an NPC prompt carrying the time of day, hunger

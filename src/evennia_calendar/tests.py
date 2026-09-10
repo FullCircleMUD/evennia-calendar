@@ -40,6 +40,39 @@ from evennia_calendar.config import (
     get_starting_year,
 )
 from evennia_calendar.log import calendar_log
+from evennia_calendar import service
+from evennia_calendar.service import (
+    _changed_units,
+    register_signal,
+    start_calendar_clock,
+    stop_calendar_clock,
+    unregister_signal,
+)
+from evennia_calendar.signals import (
+    day_changed,
+    hour_changed,
+    month_changed,
+    phase_changed,
+    season_changed,
+    week_changed,
+    year_changed,
+)
+
+ALL_UNITS = frozenset(
+    {"hour", "phase", "day", "week", "month", "season", "year"}
+)
+
+
+def date_at(elapsed_seconds):
+    """Build the GameDate for a number of elapsed game seconds.
+
+    Cheaper and safer than hand-writing ten fields: a date built this way
+    cannot be internally inconsistent, which one assembled by hand can.
+    """
+    with mock.patch(
+        "evennia_calendar.clock.gametime", return_value=elapsed_seconds
+    ):
+        return game_date()
 
 
 class ScaffoldTests(TestCase):
@@ -336,6 +369,450 @@ class PhaseTests(TestCase):
     def test_ph_04_the_last_hour_does_not_run_past_the_sixth_watch(self):
         """PH-04"""
         self.assertEqual(_phase(23), 5)
+
+
+class ChangedUnitsTests(SimpleTestCase):
+    """CU — which units turned over between two dates."""
+
+    def test_cu_01_identical_dates_change_nothing(self):
+        """CU-01"""
+        at_ten = date_at(10 * 3600)
+        self.assertEqual(_changed_units(at_ten, at_ten), frozenset())
+
+    def test_cu_02_one_hour_apart_changes_only_the_hour(self):
+        """CU-02"""
+        # 10:00 to 11:00 — both fall inside the Forenoon watch, so nothing
+        # coarser than the hour moves.
+        self.assertEqual(
+            _changed_units(date_at(10 * 3600), date_at(11 * 3600)),
+            frozenset({"hour"}),
+        )
+
+    def test_cu_03_the_watch_turns_with_the_hour(self):
+        """CU-03"""
+        self.assertEqual(
+            _changed_units(
+                date_at(3 * 3600 + 59 * 60), date_at(4 * 3600)
+            ),
+            frozenset({"hour", "phase"}),
+        )
+
+    def test_cu_04_the_turn_of_a_year_changes_every_unit(self):
+        """CU-04"""
+        last_hour = 359 * SECONDS_PER_GAME_DAY + 23 * 3600
+        self.assertEqual(
+            _changed_units(
+                date_at(last_hour), date_at(last_hour + 3600)
+            ),
+            ALL_UNITS,
+        )
+
+    def test_cu_05_the_same_day_a_year_apart_is_not_the_same_day(self):
+        """CU-05"""
+        day_96 = 96 * SECONDS_PER_GAME_DAY
+        changed = _changed_units(
+            date_at(day_96), date_at(day_96 + 360 * SECONDS_PER_GAME_DAY)
+        )
+        self.assertIn("day", changed)
+        self.assertEqual(changed, ALL_UNITS)
+
+
+class CalendarClockTests(SimpleTestCase):
+    """CK — starting, stopping, remembering, and surviving a raising hook."""
+
+    def tearDown(self):
+        stop_calendar_clock()
+
+    @staticmethod
+    def _fake_reactor():
+        from twisted.internet.task import Clock
+
+        return Clock()
+
+    def test_ck_01_starting_returns_a_running_clock_ticking_every_second(self):
+        """CK-01"""
+        from twisted.internet.task import LoopingCall
+
+        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+            loop = start_calendar_clock(clock=self._fake_reactor())
+
+        self.assertIsInstance(loop, LoopingCall)
+        self.assertTrue(loop.running)
+        self.assertEqual(loop.interval, 1.0)
+
+    def test_ck_02_starting_again_returns_the_clock_already_running(self):
+        """CK-02"""
+        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+            first = start_calendar_clock(clock=self._fake_reactor())
+            second = start_calendar_clock(clock=self._fake_reactor())
+
+        self.assertIs(second, first)
+
+    def test_ck_03_stopping_stops_it_and_a_later_start_is_a_new_clock(self):
+        """CK-03"""
+        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+            first = start_calendar_clock(clock=self._fake_reactor())
+            stop_calendar_clock()
+            self.assertFalse(first.running)
+
+            second = start_calendar_clock(clock=self._fake_reactor())
+
+        self.assertIsNot(second, first)
+
+    def test_ck_04_stopping_when_nothing_runs_does_nothing(self):
+        """CK-04"""
+        stop_calendar_clock()  # must not raise
+
+    def test_ck_05_the_first_tick_takes_a_baseline_and_announces_nothing(self):
+        """CK-05"""
+        reactor = self._fake_reactor()
+        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+            with mock.patch.object(service, "_dispatch") as dispatched:
+                start_calendar_clock(clock=reactor)
+                reactor.advance(1)
+
+        dispatched.assert_not_called()
+        self.assertEqual(service._remembered, date_at(0))
+
+    def test_ck_06_a_tick_with_nothing_turned_over_announces_nothing(self):
+        """CK-06"""
+        reactor = self._fake_reactor()
+        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+            with mock.patch.object(service, "_dispatch") as dispatched:
+                start_calendar_clock(clock=reactor)
+                reactor.advance(1)
+                reactor.advance(1)
+
+        dispatched.assert_not_called()
+
+    def test_ck_07_a_tick_where_the_hour_turned_announces_it(self):
+        """CK-07"""
+        reactor = self._fake_reactor()
+        before, after = 10 * 3600, 11 * 3600
+        with mock.patch(
+            "evennia_calendar.clock.gametime", side_effect=[before, after]
+        ):
+            with mock.patch.object(service, "_dispatch") as dispatched:
+                start_calendar_clock(clock=reactor)
+                reactor.advance(1)
+                reactor.advance(1)
+
+        dispatched.assert_called_once_with(
+            date_at(before), date_at(after), frozenset({"hour"})
+        )
+        self.assertEqual(service._remembered, date_at(after))
+
+    def test_ck_08_a_raising_dispatch_does_not_stop_the_clock(self):
+        """CK-08"""
+        reactor = self._fake_reactor()
+        with mock.patch(
+            "evennia_calendar.clock.gametime",
+            side_effect=[10 * 3600, 11 * 3600],
+        ):
+            with mock.patch.object(
+                service, "_dispatch", side_effect=RuntimeError("boom")
+            ):
+                with mock.patch.object(service, "calendar_log") as logged:
+                    loop = start_calendar_clock(clock=reactor)
+                    reactor.advance(1)
+                    reactor.advance(1)
+
+        self.assertTrue(loop.running)
+
+        # Starting the clock logs a line of its own, so look for the refusal
+        # rather than counting calls.
+        errors = [
+            call
+            for call in logged.call_args_list
+            if call.kwargs.get("level") == "ERROR"
+        ]
+        self.assertEqual(len(errors), 1)
+        self.assertTrue(errors[0].kwargs.get("trace"))
+
+
+class SignalTests(SimpleTestCase):
+    """SG — what a consumer subscribes to, and a receiver that misbehaves."""
+
+    def setUp(self):
+        self.received = []
+
+    def tearDown(self):
+        stop_calendar_clock()
+        for signal, receiver in getattr(self, "_connected", []):
+            signal.disconnect(receiver)
+
+    def _connect(self, receiver, signal=hour_changed):
+        """Connect a receiver and undo it afterwards.
+
+        Signal connections are module state and outlive a test, so a receiver
+        left connected fires in every case that follows.
+        """
+        self._connected = getattr(self, "_connected", [])
+        self._connected.append((signal, receiver))
+        signal.connect(receiver)
+
+    def _assert_fires(self, signal, times):
+        """Assert ``signal`` reaches a receiver while walking ``times``."""
+        def record(sender, previous, current, **kwargs):
+            self.received.append(current)
+
+        self._connect(record, signal)
+        self._run(times)
+        self.assertEqual(len(self.received), 1)
+
+    def _run(self, times):
+        """Start the clock, advance it once per entry in ``times``, stop."""
+        from twisted.internet.task import Clock
+
+        reactor = Clock()
+        with mock.patch(
+            "evennia_calendar.clock.gametime", side_effect=times
+        ):
+            start_calendar_clock(clock=reactor)
+            for _ in times:
+                reactor.advance(1)
+        stop_calendar_clock()
+
+    def test_sg_01_the_hour_turning_sends_the_signal_with_both_dates(self):
+        """SG-01"""
+        def record(sender, previous, current, **kwargs):
+            self.received.append((previous, current))
+
+        self._connect(record)
+        before, after = 10 * 3600, 11 * 3600
+        self._run([before, after])
+
+        self.assertEqual(self.received, [(date_at(before), date_at(after))])
+
+    def test_sg_02_an_unchanged_hour_sends_nothing(self):
+        """SG-02"""
+        def record(sender, **kwargs):
+            self.received.append(kwargs)
+
+        self._connect(record)
+        self._run([10 * 3600, 10 * 3600 + 59])
+
+        self.assertEqual(self.received, [])
+
+    def test_sg_03_a_raising_receiver_is_logged_with_its_traceback(self):
+        """SG-03"""
+        def explode(sender, **kwargs):
+            raise RuntimeError("boom")
+
+        self._connect(explode)
+        with mock.patch.object(service, "calendar_log") as logged:
+            self._run([10 * 3600, 11 * 3600])
+
+        errors = [
+            call
+            for call in logged.call_args_list
+            if call.kwargs.get("level") == "ERROR"
+        ]
+        self.assertEqual(len(errors), 1)
+        self.assertTrue(errors[0].kwargs.get("trace"))
+
+    def test_sg_04_a_raising_receiver_does_not_block_the_next(self):
+        """SG-04"""
+        def explode(sender, **kwargs):
+            raise RuntimeError("boom")
+
+        def record(sender, **kwargs):
+            self.received.append("reached")
+
+        self._connect(explode)
+        self._connect(record)
+        with mock.patch.object(service, "calendar_log"):
+            self._run([10 * 3600, 11 * 3600])
+
+        self.assertEqual(self.received, ["reached"])
+
+    # SG-05 to SG-10. A coarse unit cannot turn over alone — a month brings the
+    # day, the watch and the hour with it — so each asserts only that its own
+    # signal fired, not that the others stayed quiet.
+
+    def test_sg_05_the_watch_turning_sends_phase_changed(self):
+        """SG-05"""
+        self._assert_fires(phase_changed, [3 * 3600 + 59 * 60, 4 * 3600])
+
+    def test_sg_06_the_day_turning_sends_day_changed(self):
+        """SG-06"""
+        self._assert_fires(
+            day_changed, [23 * 3600, SECONDS_PER_GAME_DAY]
+        )
+
+    def test_sg_07_the_week_turning_sends_week_changed(self):
+        """SG-07"""
+        self._assert_fires(
+            week_changed,
+            [9 * SECONDS_PER_GAME_DAY, 10 * SECONDS_PER_GAME_DAY],
+        )
+
+    def test_sg_08_the_month_turning_sends_month_changed(self):
+        """SG-08"""
+        self._assert_fires(
+            month_changed,
+            [29 * SECONDS_PER_GAME_DAY, 30 * SECONDS_PER_GAME_DAY],
+        )
+
+    def test_sg_09_the_season_turning_sends_season_changed(self):
+        """SG-09"""
+        self._assert_fires(
+            season_changed,
+            [89 * SECONDS_PER_GAME_DAY, 90 * SECONDS_PER_GAME_DAY],
+        )
+
+    def test_sg_10_the_year_turning_sends_year_changed(self):
+        """SG-10"""
+        self._assert_fires(
+            year_changed,
+            [359 * SECONDS_PER_GAME_DAY, 360 * SECONDS_PER_GAME_DAY],
+        )
+
+
+class RegisterSignalTests(SimpleTestCase):
+    """RS — a consumer's own signal, fired on a condition they define."""
+
+    def setUp(self):
+        from django.dispatch import Signal
+
+        self.received = []
+        self.market_day = Signal()
+        self.registered = []
+        self.connected = []
+
+    def tearDown(self):
+        stop_calendar_clock()
+        for name in self.registered:
+            try:
+                unregister_signal(name)
+            except Exception:
+                pass
+        for signal, receiver in self.connected:
+            signal.disconnect(receiver)
+
+    def _register(self, signal, key, name):
+        self.registered.append(name)
+        register_signal(signal, key=key, name=name)
+
+    def _listen(self, signal):
+        """Connect a recorder, holding a strong reference to it.
+
+        ``Signal.connect()`` keeps receivers weakly, so one with no other
+        reference is collected and the connection quietly disappears.
+        """
+        def record(sender, previous, current, **kwargs):
+            self.received.append(current)
+
+        self.connected.append((signal, record))
+        signal.connect(record)
+        return record
+
+    def _run(self, times):
+        from twisted.internet.task import Clock
+
+        reactor = Clock()
+        with mock.patch(
+            "evennia_calendar.clock.gametime", side_effect=times
+        ):
+            start_calendar_clock(clock=reactor)
+            for _ in times:
+                reactor.advance(1)
+        stop_calendar_clock()
+
+    def test_rs_01_a_registered_signal_fires_when_its_key_changes(self):
+        """RS-01"""
+        # A market every tenth day. day_of_year counts from one, so elapsed
+        # day 18 is day-of-year 19 and elapsed day 19 is day-of-year 20 — the
+        # key moves from 1 to 2 across that pair.
+        self._register(
+            self.market_day,
+            key=lambda date: date.day_of_year // 10,
+            name="market_day",
+        )
+        self._listen(self.market_day)
+        self._run(
+            [18 * SECONDS_PER_GAME_DAY, 19 * SECONDS_PER_GAME_DAY]
+        )
+
+        self.assertEqual(len(self.received), 1)
+
+    def test_rs_02_a_registered_signal_is_quiet_when_its_key_is_unchanged(self):
+        """RS-02"""
+        self._register(
+            self.market_day,
+            key=lambda date: date.day_of_year // 10,
+            name="market_day",
+        )
+        self._listen(self.market_day)
+        # Day 11 to day 12 — same market, so the key does not move.
+        self._run(
+            [11 * SECONDS_PER_GAME_DAY, 12 * SECONDS_PER_GAME_DAY]
+        )
+
+        self.assertEqual(self.received, [])
+
+    def test_rs_03_a_name_another_registration_uses_is_refused(self):
+        """RS-03"""
+        from django.dispatch import Signal
+
+        self._register(
+            self.market_day, key=lambda date: date.day_of_year, name="market_day"
+        )
+
+        with self.assertRaises(ValueError) as caught:
+            register_signal(
+                Signal(), key=lambda date: date.week, name="market_day"
+            )
+        self.assertIn("market_day", str(caught.exception))
+
+    def test_rs_04_a_raising_key_does_not_silence_the_other_units(self):
+        """RS-04"""
+        def explode(date):
+            raise RuntimeError("boom")
+
+        self._register(self.market_day, key=explode, name="market_day")
+        self._listen(day_changed)
+
+        with mock.patch.object(service, "calendar_log") as logged:
+            self._run([23 * 3600, SECONDS_PER_GAME_DAY])
+
+        self.assertEqual(len(self.received), 1)
+        errors = [
+            call
+            for call in logged.call_args_list
+            if call.kwargs.get("level") == "ERROR"
+        ]
+        self.assertEqual(len(errors), 1)
+
+    def test_rs_05_unregistering_removes_a_consumers_registration(self):
+        """RS-05"""
+        self._register(
+            self.market_day,
+            key=lambda date: date.day_of_year // 10,
+            name="market_day",
+        )
+        self._listen(self.market_day)
+        unregister_signal("market_day")
+
+        self._run(
+            [10 * SECONDS_PER_GAME_DAY, 11 * SECONDS_PER_GAME_DAY]
+        )
+
+        self.assertEqual(self.received, [])
+
+    def test_rs_06_a_name_a_built_in_unit_uses_is_refused(self):
+        """RS-06"""
+        with self.assertRaises(ValueError) as caught:
+            register_signal(
+                self.market_day, key=lambda date: date.year, name="season"
+            )
+        self.assertIn("season", str(caught.exception))
+
+    def test_rs_07_a_built_in_unit_cannot_be_unregistered(self):
+        """RS-07"""
+        with self.assertRaises(ValueError) as caught:
+            unregister_signal("season")
+        self.assertIn("season", str(caught.exception))
 
 
 class GameDateTests(SimpleTestCase):

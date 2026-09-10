@@ -2,6 +2,48 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-10 — the clock announces, and a consumer can add their own
+
+87 tests, all passing. Feature complete against what it set out to do, untried against a real game.
+Thirty cases — `CU-01` to `CU-05`, `CK-01` to `CK-08`, `SG-01` to `SG-10`, `RS-01` to `RS-07`.
+
+- **A Twisted `LoopingCall`, not an Evennia script.** Nothing persistent to get stuck stopped,
+  recreated at every boot, started from the consumer's `at_server_start()`. Not from
+  `AppConfig.ready()`, which also runs during `evennia migrate` where a clock should not spin up.
+- **One real second, and the cost was measured rather than assumed.** `game_date()` is 8.78
+  microseconds, so a one-second tick is 0.0009% of a core — about one second of CPU every 31 hours.
+  Tick rate buys detection latency and nothing else: the work happens at the *transition* rate, which
+  the calendar fixes.
+- **The comparison is a pure function of two dates.** `_changed_units()` takes `previous` and
+  `current` and returns a frozenset of unit names; the clock holds the memory. That split is what
+  makes the arithmetic testable without a clock and the lifecycle testable without a reactor.
+- **A unit turned over if it or anything coarser did.** `_UNIT_FIELDS` maps each unit to the fields
+  that identify it — day is `(year, day_of_year)` — because two dates a year apart share a
+  day-of-year and are not the same day.
+- **Seven Django signals, sent with `send_robust`.** One consumer's broken handler cannot silence the
+  subscriber behind it. Failures are logged with the receiver's name, since a game running several
+  libraries needs to know whose handler broke.
+- **`register_signal()` lets a consumer add their own**, giving a signal, a pure key function over the
+  date, and a name. The clock compares `key(previous)` against `key(current)` exactly as it does the
+  built-ins. A key that raises is logged and skipped, and the other units still announce.
+- **A name in use is refused, never replaced.** Two developers on one game can both reach for
+  `"market_day"`, and the second silently clobbering the first would stop that subsystem firing with
+  nothing to say why. The seven built-in names are reserved and cannot be unregistered either.
+
+Two things found by running it rather than reasoning about it:
+
+- **`Signal.connect()` holds receivers weakly.** A demo written with inline lambdas fired nothing at
+  all — they were collected before the first tick, and the connections went with them. Silently. That
+  is the trap consumers will hit, and it now has its own section in
+  [custom-signals.md](custom-signals.md).
+- **`RS-01` failed on a one-based field.** The market key `day_of_year // 10` at elapsed days 10 and
+  11 is `11 // 10` and `12 // 10` — both 1, no boundary crossed. The code was right and the test was
+  wrong, which is the same mistake a consumer will make writing their first key function. Recorded in
+  the custom-signals guide.
+
+Also landed: [custom-signals.md](custom-signals.md), and `installing.md` grew a fourth step covering
+the clock, the seven signals and how to subscribe without losing your receiver.
+
 ## 2026-09-10 — the whole date, and the day divided into watches
 
 57 tests, all passing. `game_date()` returns ten fields. Twenty-two cases — `MO`, `WK`, `SE`, `TD`,

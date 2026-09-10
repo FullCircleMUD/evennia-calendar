@@ -12,6 +12,16 @@ that is not declared; it judges only a value the consumer actually set.
 
 from enum import Enum
 
+from .signals import (
+    day_changed,
+    hour_changed,
+    month_changed,
+    phase_changed,
+    season_changed,
+    week_changed,
+    year_changed,
+)
+
 # The log shim is imported at module scope, and this is the one module that
 # does it — a refusal has to reach calendar.log as well as the traceback. The
 # dependency runs this way deliberately: log.py imports nothing of ours, so
@@ -115,6 +125,35 @@ MONTH_NAMES = (
     "Magha",
     "Phalguna",
 )
+
+# What each unit of time is, as the fields on a GameDate that identify it. A
+# unit turned over between two dates if any of them differ — which is how the
+# coarser fields get carried: two dates a year apart share a day-of-year, and
+# are not the same day.
+#
+# This table is also the set of reserved unit names. A consumer registering a
+# signal of their own cannot use one of these, and cannot unregister them.
+UNIT_FIELDS = {
+    "year": ("year",),
+    "season": ("year", "season"),
+    "month": ("year", "month"),
+    "week": ("year", "week"),
+    "day": ("year", "day_of_year"),
+    "phase": ("year", "day_of_year", "phase"),
+    "hour": ("year", "day_of_year", "hour"),
+}
+
+# Which signal announces which unit. Wiring rather than public surface — a
+# consumer connects to the names in signals.py and never reads this.
+UNIT_SIGNALS = {
+    "hour": hour_changed,
+    "phase": phase_changed,
+    "day": day_changed,
+    "week": week_changed,
+    "month": month_changed,
+    "season": season_changed,
+    "year": year_changed,
+}
 
 SETTING_STARTING_YEAR = "CALENDAR_STARTING_YEAR"
 

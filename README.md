@@ -9,9 +9,9 @@ passage of time in a game world, in every form a game wants to read it.
 
 ## Status
 
-**Working, untried against a real game.** `from evennia_calendar import game_date` returns the whole
-date and time of day. What's still to come is announcing *changes* — a clock that fires an event when
-the watch or the season turns over. See
+**Feature complete, untried against a real game.** `from evennia_calendar import game_date` returns
+the whole date and time of day. Start the clock and it sends a Django signal when the hour, watch,
+day, week, month, season or year turns over — or one of your own, on a condition you define. See
 [docs/progress.md](https://github.com/FullCircleMUD/evennia-calendar/blob/main/docs/progress.md).
 
 ## The problem it solves
@@ -61,7 +61,8 @@ python runtests.py
 ## Learn more
 
 - [docs/INDEX.md](https://github.com/FullCircleMUD/evennia-calendar/blob/main/docs/INDEX.md) — the design wiki
-- [docs/installing.md](https://github.com/FullCircleMUD/evennia-calendar/blob/main/docs/installing.md) — everything a game declares, growing as each requirement is decided
+- [docs/installing.md](https://github.com/FullCircleMUD/evennia-calendar/blob/main/docs/installing.md) — everything a game declares, the ten fields, and the seven signals
+- [docs/custom-signals.md](https://github.com/FullCircleMUD/evennia-calendar/blob/main/docs/custom-signals.md) — having the clock fire a signal of your own
 - [docs/test-plan.md](https://github.com/FullCircleMUD/evennia-calendar/blob/main/docs/test-plan.md) — every case the library commits to covering
 - [docs/interoperability.md](https://github.com/FullCircleMUD/evennia-calendar/blob/main/docs/interoperability.md) — this library against its siblings
 - [CLAUDE.md](https://github.com/FullCircleMUD/evennia-calendar/blob/main/CLAUDE.md) — context for LLM agents working in this repo

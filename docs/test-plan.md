@@ -30,6 +30,10 @@ seems likely.
 | `TD` | `_seconds_into_day()`, `_hour()` and `_minute()` — the time of day |
 | `PH` | `_phase()` — an hour to one of the six four-hour watches |
 | `GD` | `GameDate` and `game_date()` — the frozen result, and the factory that reads the clock and composes one |
+| `CU` | `_changed_units()` — which units turned over between two dates |
+| `CK` | The clock — starting, stopping, remembering, and surviving a hook that raises |
+| `SG` | The signals a consumer subscribes to, and how a raising subscriber is handled |
+| `RS` | `register_signal()` — a consumer's own signal, fired on a condition they define |
 
 ## Fixtures
 
@@ -38,7 +42,9 @@ The fake objects the suite needs, named and purposed.
 | Fixture | Purpose |
 |---|---|
 | `django.test.override_settings` | Declares, changes or removes `CALENDAR_STARTING_YEAR` per case. The `CF` cases need nothing beyond it — there is one setting and it holds a plain value |
-| `mock.patch("evennia_calendar.clock.gametime")` | The fake clock, needed by the `GD` cases alone. Patched at the library's import site, not at Evennia's, so nothing else in the process is affected |
+| `mock.patch("evennia_calendar.clock.gametime")` | The fake clock. Patched at the library's import site, not at Evennia's, so nothing else in the process is affected |
+| `date_at(elapsed_seconds)` | Builds the `GameDate` for a number of elapsed game seconds. The `CU` cases need pairs of dates, and one built this way cannot be internally inconsistent the way one assembled field by field can |
+| `twisted.internet.task.Clock` | Drives the `LoopingCall` without a reactor, so the `CK` cases advance time rather than waiting for it. `start_calendar_clock()` takes it as an argument; production leaves it alone |
 
 The `DN`, `DY` and `YR` cases need no fixtures at all: each helper takes integers and returns
 integers, so a case is a call and an assertion. That is the point of having them — only the factory
@@ -312,6 +318,158 @@ tuple counts from zero — and `GD-02` is where dropping a `+ 1` at assembly get
 
 `GD-01` builds its instance through `game_date()` rather than constructing one by hand, so it does not
 have to be edited every time the dataclass gains a field.
+
+### `CU` — `_changed_units()`
+
+Takes two `GameDate`s, returns a frozenset of the units that turned over between them. Internal: it is
+what decides which signals the clock sends, and it is not part of any payload — a receiver has
+`previous` and `current` and can compare whatever it likes.
+
+Pure, so its cases construct two dates and assert. No clock, no reactor, no signals.
+
+**A unit turned over if it or anything coarser did.** Comparing `day_of_year` alone would call two
+dates a year apart "the same day" — they share a day-of-year and differ only in the year. So each
+comparison carries its coarser fields with it: day is `(year, day_of_year)`, phase is
+`(year, day_of_year, phase)`, and so on.
+
+| ID | Case | Test function |
+|---|---|---|
+| CU-01 | Two identical dates return an empty frozenset | `test_cu_01_identical_dates_change_nothing` |
+| CU-02 | One hour apart returns `{"hour"}` | `test_cu_02_one_hour_apart_changes_only_the_hour` |
+| CU-03 | 03:59 → 04:00 returns `{"hour", "phase"}` — the watch turns with the hour | `test_cu_03_the_watch_turns_with_the_hour` |
+| CU-04 | The last hour of a year to the first hour of the next returns all seven unit names | `test_cu_04_the_turn_of_a_year_changes_every_unit` |
+| CU-05 | The same day of the year, one year apart, returns `"day"` as well as `"year"` | `test_cu_05_the_same_day_a_year_apart_is_not_the_same_day` |
+
+`CU-05` is the case that forces the coarser-fields rule. It cannot happen on a one-second tick, but
+the function is pure and should be right regardless of who calls it.
+
+### `CK` — the clock
+
+A Twisted `LoopingCall` started from the consumer's `at_server_start()`, not an Evennia script —
+nothing persistent to get stuck stopped, and recreated at every boot. It cannot start from
+`AppConfig.ready()`, which also runs during `evennia migrate` where a clock should not be spinning up.
+
+**One real second**, fixed. The finest unit tracked is the hour, so the tick only has to be shorter
+than a game hour — 2½ real minutes at `TIME_FACTOR = 24`, 30 real minutes at Evennia's default of 2.
+One second is far inside both, costs 0.0009% of a core, and needs no setting.
+
+Takes a `clock` argument as a testing seam, so the suite drives it with `twisted.internet.task.Clock`
+and no reactor. Production leaves it alone. Same seam as `evennia-survival`.
+
+Each tick compares the date against the one it remembers and hands any change to `_dispatch()`. That
+is the seam the signals will fill next; today it does nothing, and these cases patch it to see what
+the tick decided.
+
+| ID | Case | Test function |
+|---|---|---|
+| CK-01 | `start_calendar_clock()` returns a running `LoopingCall` whose interval is one second | `test_ck_01_starting_returns_a_running_clock_ticking_every_second` |
+| CK-02 | Calling `start_calendar_clock()` again returns the clock already running rather than starting a second one | `test_ck_02_starting_again_returns_the_clock_already_running` |
+| CK-03 | `stop_calendar_clock()` stops the running clock, and a later `start_calendar_clock()` returns a new one | `test_ck_03_stopping_stops_it_and_a_later_start_is_a_new_clock` |
+| CK-04 | `stop_calendar_clock()` with no clock running does nothing and does not raise | `test_ck_04_stopping_when_nothing_runs_does_nothing` |
+| CK-05 | The first tick after starting records the date as its baseline and does not call `_dispatch()` | `test_ck_05_the_first_tick_takes_a_baseline_and_announces_nothing` |
+| CK-06 | A tick on which no unit turned over does not call `_dispatch()` | `test_ck_06_a_tick_with_nothing_turned_over_announces_nothing` |
+| CK-07 | A tick on which the hour turned calls `_dispatch()` with the previous date, the current date and `{"hour"}`, and the remembered date advances | `test_ck_07_a_tick_where_the_hour_turned_announces_it` |
+| CK-08 | An exception raised by `_dispatch()` does not stop the clock, and is written to `calendar.log` | `test_ck_08_a_raising_dispatch_does_not_stop_the_clock` |
+
+`CK-02` matters because Evennia runs `at_server_start()` on reload as well as boot, so a consumer
+following the documented instruction starts it twice.
+
+`CK-08` is the load-bearing one. An exception reaching a `LoopingCall` stops it, and the clock then
+goes quietly dead while the game looks healthy — the same trap `evennia-survival` guards against.
+
+### `SG` — the signals
+
+`django.dispatch.Signal`, declared in `signals.py` where a Django developer looks for them. One per
+unit; `hour_changed` is the first and the others follow the same shape.
+
+Each carries `previous` and `current` — the two `GameDate`s — and nothing else. The signal's name
+already says which unit turned over, and anything else a receiver wants is on the two dates.
+
+Sent with **`send_robust()`**, not `send()`. It catches each receiver's exception and hands it back
+rather than letting the first failure abort the rest — a consumer's broken handler is theirs to fix,
+and it must not silence the subscriber behind them.
+
+| ID | Case | Test function |
+|---|---|---|
+| SG-01 | A tick on which the hour turned sends `hour_changed`, carrying `previous` and `current` | `test_sg_01_the_hour_turning_sends_the_signal_with_both_dates` |
+| SG-02 | A tick on which the hour did not turn does not send `hour_changed` | `test_sg_02_an_unchanged_hour_sends_nothing` |
+| SG-03 | A receiver that raises is written to `calendar.log` with its traceback | `test_sg_03_a_raising_receiver_is_logged_with_its_traceback` |
+| SG-04 | A receiver that raises does not prevent the next receiver from running | `test_sg_04_a_raising_receiver_does_not_block_the_next` |
+| SG-05 | A tick on which the watch turned sends `phase_changed` | `test_sg_05_the_watch_turning_sends_phase_changed` |
+| SG-06 | A tick on which the day turned sends `day_changed` | `test_sg_06_the_day_turning_sends_day_changed` |
+| SG-07 | A tick on which the week turned sends `week_changed` | `test_sg_07_the_week_turning_sends_week_changed` |
+| SG-08 | A tick on which the month turned sends `month_changed` | `test_sg_08_the_month_turning_sends_month_changed` |
+| SG-09 | A tick on which the season turned sends `season_changed` | `test_sg_09_the_season_turning_sends_season_changed` |
+| SG-10 | A tick on which the year turned sends `year_changed` | `test_sg_10_the_year_turning_sends_year_changed` |
+
+`SG-03` and `SG-04` are about the dispatch and not about the hour, so they are not repeated per
+signal — the remaining six get one case each and nothing more.
+
+**A coarse unit cannot turn over alone.** A month cannot change without the day, the watch and the
+hour changing with it, so `SG-05` to `SG-10` each assert only that their own signal fired. They do not
+assert that the others did not, because the others did.
+
+What they catch is a misrouted row in `_UNIT_SIGNALS` — `"month": signals.week_changed` from a
+copy-paste slip. One case per signal fails on that. A single case asserting all seven fire at a year
+boundary would not, since everything fires there regardless of which key points where.
+
+`SG-04` is what `send_robust()` buys, and the only case that catches `send()` being used instead —
+with `send()` the first raising receiver aborts the rest, and `SG-03` would still pass because the
+exception surfaces somewhere.
+
+### `RS` — `register_signal()`
+
+A consumer's own signal, fired when a value they derive from the date changes:
+
+```python
+register_signal(market_day, key=lambda date: date.day_of_year // 10, name="market_day")
+```
+
+The clock compares `key(previous)` against `key(current)` on every tick, exactly as it does for the
+built-in units, and sends when they differ. The consumer writes a pure function and never remembers a
+previous value or writes a comparison.
+
+Their signal carries `previous` and `current`, the same as the seven built-ins, so a receiver looks
+identical whichever it is connected to.
+
+**Registrations are module state and die on reload**, like signal connections — re-registered from
+whatever runs at startup.
+
+| ID | Case | Test function |
+|---|---|---|
+| ID | Case | Test function |
+|---|---|---|
+| RS-01 | A registered signal is sent when its key function's value changes between ticks | `test_rs_01_a_registered_signal_fires_when_its_key_changes` |
+| RS-02 | A registered signal is not sent when its key function's value is unchanged | `test_rs_02_a_registered_signal_is_quiet_when_its_key_is_unchanged` |
+| RS-03 | Registering under a name another registration already uses is refused | `test_rs_03_a_name_another_registration_uses_is_refused` |
+| RS-04 | A key function that raises is written to `calendar.log`, and the other units still announce | `test_rs_04_a_raising_key_does_not_silence_the_other_units` |
+| RS-05 | `unregister_signal()` removes a consumer's registration, and it no longer fires | `test_rs_05_unregistering_removes_a_consumers_registration` |
+| RS-06 | Registering under a name a built-in unit uses is refused | `test_rs_06_a_name_a_built_in_unit_uses_is_refused` |
+| RS-07 | `unregister_signal()` refuses to remove a built-in unit | `test_rs_07_a_built_in_unit_cannot_be_unregistered` |
+
+**A name in use is refused, never replaced.** Two developers on one game can both reach for
+`"market_day"`, and the second silently clobbering the first is the worst outcome — the first
+subsystem stops firing and nothing says why. Told at registration, they rename or unregister
+deliberately.
+
+`RS-03` and `RS-06` are the same refusal reached two ways, and one check covers both because the
+built-ins live in the same registry. They stay separate cases because they are the two ways a
+consumer actually collides.
+
+**Refusing duplicates does not break reload.** The registry is module state and empties when the
+Server process restarts, so a consumer re-registering from `at_server_start()` has nothing to collide
+with.
+
+`RS-04` is the same discipline as a raising receiver, one layer earlier: the key function is the
+consumer's code, so it is logged and skipped rather than allowed to stop the clock. The second half
+is what matters — one broken registration must not silence `season_changed`.
+
+`RS-07` is why unregistering is not simply "remove whatever is under this name". A game that could
+unregister `season` could turn off part of the calendar by accident, and the seven built-ins are not
+a consumer's to remove.
+
+`RS-05` also earns its place as test infrastructure: each `RS` case registers something, and a
+registration left behind fires in every case that follows.
 
 ## Open decisions
 
