@@ -2,6 +2,35 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-10 — the whole date, and the day divided into watches
+
+57 tests, all passing. `game_date()` returns ten fields. Twenty-two cases — `MO`, `WK`, `SE`, `TD`,
+`PH` and `CN-05`.
+
+- **Six four-hour watches, not four six-hour phases.** The traditional nautical watches land on
+  exactly these hours without being nudged — Middle, Morning, Forenoon, Afternoon, Dog, First — and
+  six gives a game three choices of night length (one, two or three dark watches, so 4, 8 or 12
+  hours) where four offered only 6 or 12. `First` sits at index 5 because the naval day began at
+  noon; historically right, reads oddly, kept for the flavour.
+- **Every calendar position counts from one; the clock counts from zero.** One rule, so there is
+  nothing to remember about which field is which: subtract one to index a name tuple. `hour` and
+  `minute` are the exception because 00:00 is midnight rather than a zeroth hour. The offset is
+  applied once, at assembly, and the helpers stay zero-based throughout.
+- **`GD-02` is the only case that pins the offset**, by asserting the whole tuple. A dropped `+ 1`
+  fails there and nowhere else.
+- **Half-open boundaries in the docs** — 00:00–03:59 rather than 00:00–04:00 — so which watch owns
+  04:00 is never a question.
+- **Constants for every divisor**, so `clock.py` holds no magic numbers.
+
+Also recorded: **synchronising the clock across instances is not this library's job.** Evennia derives
+game time from a per-instance `server_epoch`, so separate databases mean separate epochs — a gap that
+exists with no calendar installed at all. Whatever provides the multi-instance deployment owns it;
+we report what `gametime()` says. Ruled in [../CLAUDE.md](../CLAUDE.md) § Out of scope.
+
+And: **the name stays `evennia-calendar`.** It is narrower than the job — the library is about game
+time in every unit, not only dates — but the churn of renaming to `evennia-timekeeper` was not worth
+it. `README.md` and `CLAUDE.md` describe the real scope instead.
+
 ## 2026-09-08 — the calendar's vocabulary
 
 35 tests, all passing. `Season`, `DAY_NAMES` and `MONTH_NAMES` declared in `config.py`. Nothing
@@ -82,7 +111,7 @@ while Django is still building its app registry, so it needs checking rather tha
 `calendar.log`. Nothing derives a date yet. Twelve cases, `CF-01` to `CF-12`.
 
 - **The calendar is fixed; only where it starts is not.** 360-day year, 12 months of 30, 36 weeks of
-  10, four seasons of 90, a 24-hour day and four six-hour phases. Fixed because every unit then
+  10, four seasons of 90, a 24-hour day and six four-hour watches. Fixed because every unit then
   divides the one above it with nothing left over, which a configurable year length cannot promise —
   at 365 the seasons stop being equal and the months stop being whole. Recorded in
   [installing.md](installing.md) § The calendar itself is not configurable.

@@ -1,12 +1,17 @@
 # evennia-calendar
 
-A game-world calendar for Evennia. Evennia tells you how many game seconds have passed; this library
-turns that into a date, a season and a time of day.
+Game time for Evennia, in whatever unit you need it. Evennia tells you how many game seconds have
+passed; this library turns that into a year, a month, a week, a day, a season, a watch, an hour and a
+minute.
+
+The name says calendar because dates are the recognisable part. The job is broader: expressing the
+passage of time in a game world, in every form a game wants to read it.
 
 ## Status
 
-**The clock works.** `from evennia_calendar import game_date` gives you the world's year and day of
-that year. Month, week, season, hour and phase are still to come. See
+**Working, untried against a real game.** `from evennia_calendar import game_date` returns the whole
+date and time of day. What's still to come is announcing *changes* — a clock that fires an event when
+the watch or the season turns over. See
 [docs/progress.md](https://github.com/FullCircleMUD/evennia-calendar/blob/main/docs/progress.md).
 
 ## The problem it solves

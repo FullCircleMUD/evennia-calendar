@@ -35,6 +35,50 @@ CALENDAR_STARTING_YEAR = 850
 
 Detail and the rules it has to satisfy are under [Optional settings](#optional-settings) below.
 
+## Using it
+
+One call, one frozen result:
+
+```python
+from evennia_calendar import game_date
+
+date = game_date()
+```
+
+| Field | Range | |
+|---|---|---|
+| `year` | from `CALENDAR_STARTING_YEAR` | |
+| `day_of_year` | 1–360 | |
+| `month` | 1–12 | `MONTH_NAMES[date.month - 1]` |
+| `day_of_month` | 1–30 | |
+| `week` | 1–36 | |
+| `day_of_week` | 1–10 | `DAY_NAMES[date.day_of_week - 1]` |
+| `season` | a `Season` | `Season.SPRING` … `Season.WINTER` |
+| `hour` | 0–23 | |
+| `minute` | 0–59 | |
+| `phase` | 1–6 | `PHASE_NAMES[date.phase - 1]` |
+
+**Every calendar position counts from one**, because nobody writes "0/0/1000". So a name lookup takes
+the offset back off: `MONTH_NAMES[date.month - 1]`. One rule, no exceptions to remember.
+
+`hour` and `minute` are the exception and count from zero, because 00:00 is midnight rather than a
+zeroth hour. That is a clock, not a calendar position.
+
+`season` carries the enum rather than a number, because a game branches on it — `if date.season is
+Season.WINTER` — rather than displaying it.
+
+```python
+from evennia_calendar.config import DAY_NAMES, MONTH_NAMES, PHASE_NAMES
+
+f"{PHASE_NAMES[date.phase - 1]} watch, "
+f"{DAY_NAMES[date.day_of_week - 1]} "
+f"{date.day_of_month} {MONTH_NAMES[date.month - 1]}, year {date.year}"
+# "Afternoon watch, Manuh 6 Caitra, year 1000"
+```
+
+**Nothing is stored.** Every call builds a new `GameDate` from the clock, so an instance you hold on
+to is a snapshot. Call again for the current date rather than keeping one around.
+
 ## Evennia's time settings, and what this library does with them
 
 **Three settings belong to Evennia, not to this library.** They are core Evennia settings that exist
@@ -115,7 +159,7 @@ divides the one above it with nothing left over.
 | Month | 30 days — 12 per year, 3 per season |
 | Week | 10 days — 36 per year, 3 per month |
 | Day | 24 hours |
-| Phase | 6 hours — four per day |
+| Watch | 4 hours — six per day |
 
 A configurable year length cannot promise that. At 365 days the seasons stop being equal, the months
 stop being whole, and the weeks stop lining up with the months — so the year length is not offered as
@@ -138,6 +182,29 @@ Seasons are different. `Season` is an enum rather than a name, because a game br
 called in English rather than something we invented. What your world *displays* for them is still
 yours.
 
+## Running more than one instance
+
+This library reports whatever `gametime()` says, and **assumes every instance has been given a clock
+that agrees**.
+
+Evennia derives game time from `server_epoch`, a first-start timestamp held in each instance's own
+`ServerConfig`. Instances with separate databases have separate epochs and will disagree about the
+date — by however long apart they were installed, multiplied by `TIME_FACTOR`. That is a property of
+Evennia's clock rather than of this library: the same gap affects `gametime.schedule()` in a
+deployment with no calendar installed at all.
+
+**Synchronising it is the job of whatever gives you multiple instances**, not of the calendar. If
+instances disagree about the clock, they will disagree about the date, and nothing here detects or
+corrects that.
+
+Two things follow if you run more than one:
+
+- **`TIME_IGNORE_DOWNTIMES` must be `True`.** On the other branch the clock counts each instance's own
+  accumulated uptime, which cannot be synchronised by any means — two instances that were down for
+  different lengths of time are permanently apart.
+- **The epochs must be made to match**, once, and again whenever an instance's database is rebuilt.
+  A rebuilt database is a new epoch.
+
 ## What is not checked for you
 
 - **`INSTALLED_APPS`.** Leave the library out of it and `AppConfig.ready()` never runs, so nothing
@@ -147,3 +214,5 @@ yours.
   one your game meant. See the `TIME_IGNORE_DOWNTIMES` table above.
 - **Calendar continuity across a database wipe.** Nothing detects that the world's date went
   backwards.
+- **Whether your instances agree about the clock.** See *Running more than one instance* above. A
+  drifted instance looks completely healthy and simply reports a different date.

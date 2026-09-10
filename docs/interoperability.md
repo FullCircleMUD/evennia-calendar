@@ -8,11 +8,11 @@ Each section names the relationship — **hard dependency**, **optional integrat
 coupling** — followed either by the constraints that apply or by an explicit clearance stating *why* it
 is clear in terms of what this library does. "No known issues" is not a clearance.
 
-**Only the configuration layer exists so far**, so every statement below is provisional. The
-clearances rest on three properties the library has committed to and has not yet had a chance to
-breach: it stores nothing, it reads Evennia's clock rather than the database, and it searches for and
-holds no game objects. Re-confirm each one against the implementation as it lands rather than
-inheriting it.
+**Nothing here has run against a real game yet**, so every statement below is provisional. The
+clearances rest on three properties the library holds today: it stores nothing, it reads Evennia's
+clock rather than the database, and it searches for and holds no game objects. The transition clock
+still to be built will change the first of those — it will remember the last date it saw, in module
+state — so re-confirm rather than inheriting these once it lands.
 
 **A recurring theme, stated once.** Several siblings are ones a consumer would plausibly *compose*
 with this library — spawning that varies by season, an NPC prompt carrying the time of day, hunger

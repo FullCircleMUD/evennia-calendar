@@ -24,6 +24,11 @@ seems likely.
 | `DN` | `_day_number()` — elapsed game seconds to an absolute day count |
 | `DY` | `_day_of_year()` — an absolute day count to a position within the year |
 | `YR` | `_year()` — an absolute day count and a starting year to the year |
+| `MO` | `_month()` and `_day_of_month()` — where in the year by month |
+| `WK` | `_week()` and `_day_of_week()` — where in the year by week |
+| `SE` | `_season()` — a day of the year to a `Season` |
+| `TD` | `_seconds_into_day()`, `_hour()` and `_minute()` — the time of day |
+| `PH` | `_phase()` — an hour to one of the six four-hour watches |
 | `GD` | `GameDate` and `game_date()` — the frozen result, and the factory that reads the clock and composes one |
 
 ## Fixtures
@@ -124,6 +129,7 @@ replacing them should not have to subclass anything.
 | CN-02 | The seasons run spring, summer, autumn, winter with values 0–3, so `Season(0)` is `SPRING` | `test_cn_02_the_seasons_run_spring_first_with_values_zero_to_three` |
 | CN-03 | `DAY_NAMES` has exactly ten entries, one per day of the week | `test_cn_03_there_are_exactly_ten_day_names` |
 | CN-04 | `MONTH_NAMES` has exactly twelve entries, one per month | `test_cn_04_there_are_exactly_twelve_month_names` |
+| CN-05 | `PHASE_NAMES` has exactly six entries, one per watch | `test_cn_05_there_are_exactly_six_phase_names` |
 
 `CN-01` and `CN-02` are both needed: pinning the values 0–3 does not stop a fifth member being added
 alongside them.
@@ -190,6 +196,94 @@ than reading the setting, so it stays a pure conversion and the accessor is the 
 `YR-02` and `YR-03` are the boundary pair. `YR-04` exists because an implementation that adds one
 year past 360, rather than dividing, passes everything above it.
 
+### `MO` — `_month()` and `_day_of_month()`
+
+Twelve months of thirty days, both off `day_of_year`. Each case asserts both, because "what month and
+day is this" is one question.
+
+| ID | Case | Test function |
+|---|---|---|
+| MO-01 | Day 0 is month 0, day 0 of that month | `test_mo_01_day_zero_is_the_first_day_of_the_first_month` |
+| MO-02 | Day 29 is month 0, day 29 — the last day of the first month | `test_mo_02_day_29_is_the_last_day_of_the_first_month` |
+| MO-03 | Day 30 is month 1, day 0 — the month rolls | `test_mo_03_day_30_rolls_into_the_second_month` |
+| MO-04 | Day 359 is month 11, day 29 — the last day of the year, and the month does not run past eleven | `test_mo_04_the_last_day_of_the_year_does_not_run_past_month_eleven` |
+
+`MO-04` is the one that matters most: a month of 12 indexes past the end of `MONTH_NAMES`, and the
+whole reason `CN-04` pins that tuple's length is that the pair fails together.
+
+### `WK` — `_week()` and `_day_of_week()`
+
+Thirty-six weeks of ten days. Because 360 divides by 10 exactly, it makes no difference whether the
+week runs continuously across years or resets each year — both give this answer.
+
+| ID | Case | Test function |
+|---|---|---|
+| WK-01 | Day 0 is week 0, day 0 of that week | `test_wk_01_day_zero_is_the_first_day_of_the_first_week` |
+| WK-02 | Day 9 is week 0, day 9 — the last day of the first week | `test_wk_02_day_9_is_the_last_day_of_the_first_week` |
+| WK-03 | Day 10 is week 1, day 0 | `test_wk_03_day_10_rolls_into_the_second_week` |
+| WK-04 | Day 359 is week 35, day 9 — the week does not run past thirty-five | `test_wk_04_the_last_day_of_the_year_does_not_run_past_week_35` |
+
+### `SE` — `_season()`
+
+Four seasons of ninety days, returning a `Season` rather than an integer, so a consumer branches on
+the enum.
+
+| ID | Case | Test function |
+|---|---|---|
+| SE-01 | Day 0 is spring — the promise made in installing.md | `test_se_01_day_zero_is_spring` |
+| SE-02 | Day 89 is still spring | `test_se_02_day_89_is_still_spring` |
+| SE-03 | Day 90 is summer | `test_se_03_day_90_is_summer` |
+| SE-04 | Day 359 is winter, and the lookup does not run past the last member | `test_se_04_the_last_day_of_the_year_is_winter` |
+
+### `TD` — `_seconds_into_day()`, `_hour()` and `_minute()`
+
+The time of day. `_seconds_into_day()` keeps precisely what `_day_number()` discards — both take
+elapsed game seconds, one divides and one takes the remainder.
+
+`minute` exists for display and nothing computes from it. It is here because **a clock without a
+minute hand gives a player no way to judge how long something took** — not because it was cheap to
+add. There is deliberately no `second`: at any usable time factor it is noise.
+
+| ID | Case | Test function |
+|---|---|---|
+| TD-01 | Zero elapsed seconds is 0 seconds into the day | `test_td_01_zero_elapsed_is_zero_seconds_into_the_day` |
+| TD-02 | One day plus one second is 1 second into the day — it keeps what `_day_number()` drops | `test_td_02_it_keeps_what_the_day_number_discards` |
+| TD-03 | 0 seconds into the day is hour 0, minute 0 | `test_td_03_the_start_of_the_day_is_hour_zero_minute_zero` |
+| TD-04 | 13h 32m into the day is hour 13, minute 32 | `test_td_04_thirteen_hours_thirty_two_minutes_in` |
+| TD-05 | The last second of the day is hour 23, minute 59 — neither runs over | `test_td_05_the_last_second_of_the_day_does_not_run_over` |
+
+### `PH` — `_phase()`
+
+Six watches of four hours, taken from the hour rather than from the seconds, so the phase cannot
+disagree with the clock beside it.
+
+Six rather than four quarters because the traditional nautical watches land on exactly these hours
+without being nudged, and because six gives a game three choices of night length — one, two or three
+dark watches, so 4, 8 or 12 hours — where four phases offered only 6 or 12.
+
+| Watch | Hours |
+|---|---|
+| 0 Middle | 00:00–03:59 |
+| 1 Morning | 04:00–07:59 |
+| 2 Forenoon | 08:00–11:59 |
+| 3 Afternoon | 12:00–15:59 |
+| 4 Dog | 16:00–19:59 |
+| 5 First | 20:00–23:59 |
+
+`First` sits at index 5 rather than 0 because the naval day began at noon, so the first watch of the
+new day started at 20:00. Historically right, and it reads oddly in a list that starts at midnight —
+kept anyway, since the flavour is the whole reason for the naming.
+
+| ID | Case | Test function |
+|---|---|---|
+| PH-01 | Hour 0 is watch 0 | `test_ph_01_hour_zero_is_the_first_watch` |
+| PH-02 | Hour 3 is still watch 0 | `test_ph_02_hour_3_is_still_the_first_watch` |
+| PH-03 | Hour 4 is watch 1 | `test_ph_03_hour_4_is_the_second_watch` |
+| PH-04 | Hour 23 is watch 5, and does not run past five | `test_ph_04_the_last_hour_does_not_run_past_the_sixth_watch` |
+
+The field stays `phase` rather than `watch`, and the names live in `PHASE_NAMES`. Same split as the
+days and months: a neutral number on `GameDate`, flavour in a tuple a game replaces.
+
 ### `GD` — `GameDate` and `game_date()`
 
 The first cut carries two fields, `year` and `day_of_year`. `GameDate` is frozen and nothing stores
@@ -199,12 +293,25 @@ snapshot rather than something that goes stale in place.
 | ID | Case | Test function |
 |---|---|---|
 | GD-01 | `GameDate` is frozen — assigning to a field raises rather than mutating the instance | `test_gd_01_the_dataclass_is_frozen` |
-| GD-02 | `game_date()` reads the clock and returns both fields composed from it | `test_gd_02_the_factory_reads_the_clock_and_composes_both_fields` |
+| GD-02 | `game_date()` reads the clock and returns **every** field composed from it | `test_gd_02_the_factory_reads_the_clock_and_composes_every_field` |
 | GD-03 | The year comes through the `CALENDAR_STARTING_YEAR` accessor, so an undeclared setting gives the default of 1000 | `test_gd_03_the_year_comes_through_the_accessor` |
 
 Three cases, and they stay three however many fields are added. `GD-02` proves the clock is read and
 the helpers are composed; `GD-03` proves the offset arrives through the accessor rather than being
 reached for directly or hardcoded.
+
+**`GD-02` widens as fields are added** rather than gaining a sibling case. It asserts the whole
+result, so a factory that computes a field and forgets to pass it fails here — which a case pinned to
+two named fields would not catch. The ID is not being reused: it is the same behaviour against a
+wider object.
+
+It is also **the only case that pins the one-based offset**. The `MO`, `WK` and `DY` helpers are
+zero-based, so `_month(5)` is `0` while `game_date().month` for the same day is `1`. That difference
+is deliberate — anything a player sees as a number counts from one, anything that only indexes a name
+tuple counts from zero — and `GD-02` is where dropping a `+ 1` at assembly gets caught.
+
+`GD-01` builds its instance through `game_date()` rather than constructing one by hand, so it does not
+have to be edited every time the dataclass gains a field.
 
 ## Open decisions
 
@@ -220,6 +327,6 @@ Every `[TBD]` in this repo, collected. A case cannot be written against an open 
 - **Whether moon phases are in scope.** Out for now, pending research.
 
 Settled, and recorded here so they are not reopened: the calendar is fixed at a 360-day year of 12
-months of 30 days, 36 weeks of 10 days, four seasons of 90 days, a 24-hour day and four six-hour
-phases. Seasons are the four standard names. There is no `days_per_year`, `hours_per_day` or
+months of 30 days, 36 weeks of 10 days, four seasons of 90 days, a 24-hour day and six four-hour
+watches. Seasons are the four standard names. There is no `days_per_year`, `hours_per_day` or
 `starting_day` setting — a game starts on day 0 of whatever year it declares.

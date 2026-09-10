@@ -15,7 +15,16 @@ import evennia_calendar
 from evennia_calendar.clock import (
     GameDate,
     _day_number,
+    _day_of_month,
+    _day_of_week,
     _day_of_year,
+    _hour,
+    _minute,
+    _month,
+    _phase,
+    _season,
+    _seconds_into_day,
+    _week,
     _year,
     game_date,
 )
@@ -23,6 +32,7 @@ from evennia_calendar.config import (
     DAY_NAMES,
     DEFAULT_STARTING_YEAR,
     MONTH_NAMES,
+    PHASE_NAMES,
     SECONDS_PER_GAME_DAY,
     SETTING_STARTING_YEAR,
     Season,
@@ -157,6 +167,10 @@ class CalendarNamesTests(TestCase):
         """CN-04"""
         self.assertEqual(len(MONTH_NAMES), 12)
 
+    def test_cn_05_there_are_exactly_six_phase_names(self):
+        """CN-05"""
+        self.assertEqual(len(PHASE_NAMES), 6)
+
 
 class DayNumberTests(TestCase):
     """DN — elapsed game seconds to an absolute day count."""
@@ -218,27 +232,150 @@ class YearTests(TestCase):
         self.assertEqual(_year(725, 850), 852)
 
 
+class MonthTests(TestCase):
+    """MO — where in the year by month."""
+
+    def test_mo_01_day_zero_is_the_first_day_of_the_first_month(self):
+        """MO-01"""
+        self.assertEqual((_month(0), _day_of_month(0)), (0, 0))
+
+    def test_mo_02_day_29_is_the_last_day_of_the_first_month(self):
+        """MO-02"""
+        self.assertEqual((_month(29), _day_of_month(29)), (0, 29))
+
+    def test_mo_03_day_30_rolls_into_the_second_month(self):
+        """MO-03"""
+        self.assertEqual((_month(30), _day_of_month(30)), (1, 0))
+
+    def test_mo_04_the_last_day_of_the_year_does_not_run_past_month_eleven(self):
+        """MO-04"""
+        self.assertEqual((_month(359), _day_of_month(359)), (11, 29))
+
+
+class WeekTests(TestCase):
+    """WK — where in the year by week."""
+
+    def test_wk_01_day_zero_is_the_first_day_of_the_first_week(self):
+        """WK-01"""
+        self.assertEqual((_week(0), _day_of_week(0)), (0, 0))
+
+    def test_wk_02_day_9_is_the_last_day_of_the_first_week(self):
+        """WK-02"""
+        self.assertEqual((_week(9), _day_of_week(9)), (0, 9))
+
+    def test_wk_03_day_10_rolls_into_the_second_week(self):
+        """WK-03"""
+        self.assertEqual((_week(10), _day_of_week(10)), (1, 0))
+
+    def test_wk_04_the_last_day_of_the_year_does_not_run_past_week_35(self):
+        """WK-04"""
+        self.assertEqual((_week(359), _day_of_week(359)), (35, 9))
+
+
+class SeasonLookupTests(TestCase):
+    """SE — a day of the year to a Season."""
+
+    def test_se_01_day_zero_is_spring(self):
+        """SE-01"""
+        self.assertIs(_season(0), Season.SPRING)
+
+    def test_se_02_day_89_is_still_spring(self):
+        """SE-02"""
+        self.assertIs(_season(89), Season.SPRING)
+
+    def test_se_03_day_90_is_summer(self):
+        """SE-03"""
+        self.assertIs(_season(90), Season.SUMMER)
+
+    def test_se_04_the_last_day_of_the_year_is_winter(self):
+        """SE-04"""
+        self.assertIs(_season(359), Season.WINTER)
+
+
+class TimeOfDayTests(TestCase):
+    """TD — seconds into the day, and the hour and minute from them."""
+
+    def test_td_01_zero_elapsed_is_zero_seconds_into_the_day(self):
+        """TD-01"""
+        self.assertEqual(_seconds_into_day(0), 0)
+
+    def test_td_02_it_keeps_what_the_day_number_discards(self):
+        """TD-02"""
+        self.assertEqual(_seconds_into_day(SECONDS_PER_GAME_DAY + 1), 1)
+
+    def test_td_03_the_start_of_the_day_is_hour_zero_minute_zero(self):
+        """TD-03"""
+        self.assertEqual((_hour(0), _minute(0)), (0, 0))
+
+    def test_td_04_thirteen_hours_thirty_two_minutes_in(self):
+        """TD-04"""
+        seconds = 13 * 3600 + 32 * 60
+        self.assertEqual((_hour(seconds), _minute(seconds)), (13, 32))
+
+    def test_td_05_the_last_second_of_the_day_does_not_run_over(self):
+        """TD-05"""
+        last = SECONDS_PER_GAME_DAY - 1
+        self.assertEqual((_hour(last), _minute(last)), (23, 59))
+
+
+class PhaseTests(TestCase):
+    """PH — an hour to one of the six four-hour watches."""
+
+    def test_ph_01_hour_zero_is_the_first_watch(self):
+        """PH-01"""
+        self.assertEqual(_phase(0), 0)
+
+    def test_ph_02_hour_3_is_still_the_first_watch(self):
+        """PH-02"""
+        self.assertEqual(_phase(3), 0)
+
+    def test_ph_03_hour_4_is_the_second_watch(self):
+        """PH-03"""
+        self.assertEqual(_phase(4), 1)
+
+    def test_ph_04_the_last_hour_does_not_run_past_the_sixth_watch(self):
+        """PH-04"""
+        self.assertEqual(_phase(23), 5)
+
+
 class GameDateTests(SimpleTestCase):
     """GD — the frozen result, and the factory that composes one."""
 
     def test_gd_01_the_dataclass_is_frozen(self):
         """GD-01"""
-        date = GameDate(year=850, day_of_year=0)
+        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+            date = game_date()
+
         with self.assertRaises(FrozenInstanceError):
             date.year = 851
 
     @override_settings(CALENDAR_STARTING_YEAR=850)
-    def test_gd_02_the_factory_reads_the_clock_and_composes_both_fields(self):
+    def test_gd_02_the_factory_reads_the_clock_and_composes_every_field(self):
         """GD-02"""
-        elapsed = SECONDS_PER_GAME_DAY * 725
+        # Two years and five days on, thirteen hours and thirty-two minutes
+        # into that day. Day 5 of a year is month 0 day 5, week 0 day 5, spring.
+        elapsed = SECONDS_PER_GAME_DAY * 725 + 13 * 3600 + 32 * 60
         with mock.patch(
             "evennia_calendar.clock.gametime", return_value=elapsed
         ) as clock:
             date = game_date()
 
         clock.assert_called_once_with(absolute=False)
-        self.assertEqual(date.year, 852)
-        self.assertEqual(date.day_of_year, 5)
+        self.assertEqual(
+            (
+                date.year,
+                date.day_of_year,
+                date.month,
+                date.day_of_month,
+                date.week,
+                date.day_of_week,
+                date.season,
+                date.hour,
+                date.minute,
+                date.phase,
+            ),
+            (852, 6, 1, 6, 1, 6, Season.SPRING, 13, 32, 4),
+        )
 
     def test_gd_03_the_year_comes_through_the_accessor(self):
         """GD-03"""

@@ -9,8 +9,14 @@ Instructions for Claude (and other LLM agents) working in this repository.
 
 ## What this project is
 
-`evennia-calendar` turns [Evennia](https://www.evennia.com/)'s game clock into a game-world calendar —
-a date, a season and a time of day. Tagline: **"Dates, seasons and time of day for Evennia."**
+`evennia-calendar` turns [Evennia](https://www.evennia.com/)'s game clock into game time a world can
+use — a year, a month, a week, a day, a season, a watch, an hour and a minute.
+Tagline: **"Game time for Evennia, in whatever unit you need it."**
+
+**The name is narrower than the job**, deliberately: dates are the recognisable part, so that is what
+it is called, but the library is about expressing the passage of time in every form a game reads it.
+Considered renaming to `evennia-timekeeper` and decided against — the churn was not worth it. Do not
+reopen it.
 
 Evennia's `gametime()` returns a count of game seconds and nothing else; the division into days,
 years, seasons and phases is this library's job. FullCircleMUD is the intended first consumer and has
@@ -22,11 +28,13 @@ For the design wiki, read [docs/INDEX.md](docs/INDEX.md).
 
 ## Project status
 
-**The clock works.** `from evennia_calendar import game_date` returns the world's year and day of that
-year, derived from Evennia's game seconds. A bad setting is refused at boot and written to
-`calendar.log`. The calendar's vocabulary — `Season`, `DAY_NAMES`, `MONTH_NAMES` — is declared but
-nothing indexes it yet. Still to come: month, week, season, hour and phase — each an added field with
-its own helper. 35 tests passing. See [docs/progress.md](docs/progress.md).
+**Working, untried against a real game.** `from evennia_calendar import game_date` returns the whole
+date and time of day — ten fields, every calendar position counting from one, the clock from zero. A
+bad setting is refused at boot and written to `calendar.log`. 57 tests passing.
+
+Still to come: **announcing changes.** A one-second `LoopingCall` that compares what it last saw and
+fires Django signals when the watch, day, month or season turns over, so consumers subscribe rather
+than polling. Agreed, not built. See [docs/progress.md](docs/progress.md).
 
 ## Where to read first
 
@@ -72,8 +80,8 @@ Every implementation decision must respect them.
    warn about them, or work around them.
 
 7. **The calendar's shape is fixed, and only where it starts is configurable.** 360-day year, 12
-   months of 30 days, 36 weeks of 10 days, four seasons of 90 days, a 24-hour day, four six-hour
-   phases. Every unit divides the one above it with nothing left over, and that is the reason: a
+   months of 30 days, 36 weeks of 10 days, four seasons of 90 days, a 24-hour day, six four-hour
+   watches. Every unit divides the one above it with nothing left over, and that is the reason: a
    configurable year length cannot promise it — at 365 the seasons stop being equal and the months
    stop being whole. **Do not add a `days_per_year` or `hours_per_day` setting.** It looks like an
    obvious kindness to a consumer and it breaks months, weeks and seasons at the same stroke.
@@ -89,6 +97,22 @@ Decided as questions arise. Rulings so far:
 - **The library owns no tables.** The calendar is derived from game time, so there is nothing to
   store. No alias, no router, no migration for a consumer to configure. Revisit only if the library
   gains data of its own.
+- **Keeping the clock in sync across instances.** Not ours. Settled, and recorded here so it is not
+  reopened.
+
+  Evennia derives game time from `server_epoch`, a first-start timestamp held in each instance's own
+  `ServerConfig`. Separate instances have separate databases and therefore separate epochs, so they
+  disagree about the date. That is true of any multi-instance Evennia deployment **whether or not this
+  library is installed** — `gametime.schedule()` has the same problem — which is what makes it the
+  clock layer's concern rather than the calendar's.
+
+  So: whatever provides the multi-instance deployment owns synchronising it. For FCM that is
+  `evennia-portal-multiplex`. This library reports whatever `gametime()` says and assumes it has been
+  handed a clock the deployment agrees on. If instances disagree, their dates disagree, and nothing
+  here detects or corrects it.
+
+  One consequence we do own: a clock can move under us — a re-stamped epoch, a reload — and the
+  transition ticker must treat that as a re-baseline rather than firing every signal at once.
 
 ## Working conventions
 

@@ -23,16 +23,26 @@ from .log import calendar_log
 # a settable year length could not promise. See CLAUDE.md principle 7 before
 # reaching for the idea of making any of these a setting.
 SECONDS_PER_GAME_DAY = 86400
+SECONDS_PER_HOUR = 3600
+SECONDS_PER_MINUTE = 60
 DAYS_PER_YEAR = 360
+DAYS_PER_SEASON = 90
+DAYS_PER_MONTH = 30
+DAYS_PER_WEEK = 10
+HOURS_PER_WATCH = 4
 
 
 class Season(Enum):
     """The four seasons, ninety days each.
 
     The values are the season's position in the year, so a season is looked up
-    as ``Season(day_of_year // 90)``. Spring is 0 because day 0 of every year is
-    the first day of spring — a promise made to consumers in
-    docs/installing.md, and true only while this order holds.
+    as ``Season(day_of_year // 90)`` against the zero-based day the helpers work
+    in. Spring is 0 because the year opens in spring — a promise made to
+    consumers in docs/installing.md, and true only while this order holds.
+
+    A consumer never sees these numbers; they branch on the member. That is why
+    this stays zero-based while every calendar position on a ``GameDate`` counts
+    from one.
 
     An enum rather than a tuple of names: a game branches on the season, and
     ``Season.WINTER`` says what ``season == 3`` does not.
@@ -53,6 +63,10 @@ class Season(Enum):
 # Tuples rather than enums because nothing computes from the strings: they are
 # looked up by index and displayed. A game swapping them writes one tuple.
 #
+# INDEXED BY THE FIELD MINUS ONE. Every calendar position on a GameDate counts
+# from one, so DAY_NAMES[date.day_of_week - 1] and MONTH_NAMES[date.month - 1].
+# Miss the offset and you silently get the following name, every time.
+#
 # The lengths are load-bearing. Ten and twelve are what the arithmetic divides
 # by; a tuple one short does not raise, it returns the wrong name.
 DAY_NAMES = (
@@ -66,6 +80,25 @@ DAY_NAMES = (
     "Raja",
     "Dewa",
     "Raksasa",
+)
+
+# The six watches of the day, four hours each, from the traditional nautical
+# watch system — they land on exactly these hours without being nudged. "First"
+# sits at index 5 rather than 0 because the naval day began at noon, so the
+# first watch of the new day started at 20:00.
+#
+# Six rather than four quarters because it gives a game three choices of night
+# length — one, two or three dark watches, so 4, 8 or 12 hours. Which of them
+# are dark is the game's business, not ours.
+#
+# Indexed by PHASE_NAMES[date.phase - 1], as the other two are.
+PHASE_NAMES = (
+    "Middle",
+    "Morning",
+    "Forenoon",
+    "Afternoon",
+    "Dog",
+    "First",
 )
 
 MONTH_NAMES = (
