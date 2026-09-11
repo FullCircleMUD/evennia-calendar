@@ -59,7 +59,6 @@ One section per function or surface, each with its own prefix and its own table.
 | ID | Case | Test function |
 |---|---|---|
 | SC-01 | The package is importable and carries a version | `test_sc_01_the_package_is_importable_and_versioned` |
-| SC-02 | The log shim is a silent no-op outside an Evennia engine, returning `None` rather than raising | `test_sc_02_the_log_shim_is_a_no_op_outside_evennia` |
 | SC-03 | The public surface resolves from the package root — `from evennia_calendar import game_date` gives the same object as `evennia_calendar.clock.game_date` | `test_sc_03_the_public_surface_resolves_from_the_package_root` |
 | SC-04 | An unknown attribute on the package raises `AttributeError` rather than resolving to something | `test_sc_04_an_unknown_package_attribute_raises` |
 

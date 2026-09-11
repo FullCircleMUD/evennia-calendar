@@ -61,6 +61,13 @@ and writes to the objects it is handed; this library holds no objects and writes
 thread; this library does arithmetic on a number and dispatches nothing. A game putting the season
 into an NPC prompt is composition in the consumer's code, not a coupling between the two.
 
+## evennia-logging-extension
+
+**Hard dependency.** `log.py` binds `calendar_log` through its `make_logger`, and every line the
+library emits goes through that binding to `calendar.log`. The library does not run without it —
+`pyproject.toml` declares it. Nothing flows the other way: the extension knows nothing about the
+calendar.
+
 ## evennia-message-bus
 
 **No coupling.** Neither library imports the other. The bus exists to coordinate state between

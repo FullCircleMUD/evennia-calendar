@@ -190,7 +190,7 @@ evennia-calendar/
 │       ├── config.py          # the setting, its accessor, check_settings()
 │       ├── service.py         # the LoopingCall, the comparison, the dispatch
 │       ├── signals.py         # the seven Signal objects consumers connect to
-│       ├── log.py             # shim onto Evennia's logger → calendar.log
+│       ├── log.py             # binds calendar_log via evennia-logging-extension → calendar.log
 │       └── tests.py           # unit tests, run via runtests.py
 └── tests/                     # standalone test infrastructure
     ├── __init__.py

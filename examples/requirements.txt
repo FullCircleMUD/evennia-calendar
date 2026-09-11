@@ -17,6 +17,10 @@ evennia
 # the demo settings swap it in, gated on darwin.
 sqlean.py; sys_platform == "darwin"
 
+# Not on PyPI — the calendar's logging binds through it, so it is installed
+# editable from the sibling checkout before pip resolves the calendar itself.
+-e ../../evennia-logging-extension
+
 # The library under demonstration, installed editable so an edit in src/ is
 # live in the demo without reinstalling.
 -e ..

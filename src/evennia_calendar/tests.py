@@ -39,7 +39,6 @@ from evennia_calendar.config import (
     check_settings,
     get_starting_year,
 )
-from evennia_calendar.log import calendar_log
 from evennia_calendar import service
 from evennia_calendar.service import (
     _changed_units,
@@ -81,10 +80,6 @@ class ScaffoldTests(TestCase):
     def test_sc_01_the_package_is_importable_and_versioned(self):
         """SC-01"""
         self.assertTrue(evennia_calendar.__version__)
-
-    def test_sc_02_the_log_shim_is_a_no_op_outside_evennia(self):
-        """SC-02"""
-        self.assertIsNone(calendar_log("scaffold check"))
 
     def test_sc_03_the_public_surface_resolves_from_the_package_root(self):
         """SC-03"""
