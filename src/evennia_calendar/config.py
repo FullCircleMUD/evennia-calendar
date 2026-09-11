@@ -212,13 +212,16 @@ def check_settings():
     if problems:
         from django.core.exceptions import ImproperlyConfigured
 
-        # **The exception is the only channel here.** Nothing is logged,
-        # because nothing can be: this runs from AppConfig.ready() during
-        # django.setup(), and Evennia's log_file() defers every write to the
-        # reactor's thread pool, which does not exist yet. The deferred is
-        # created, never runs, and dies with the process. Verified — it leaves
-        # a zero-byte log file and no line.
-        #
-        # So the message carries everything a consumer needs, and it reaches
-        # whoever ran the command. See design/library-standards.md § Logging.
-        raise ImproperlyConfigured(" ".join(problems))
+        # Logged before the raise, with the same text. This runs during
+        # django.setup(), before the reactor exists — a window
+        # evennia-logging-extension writes synchronously, which is what makes
+        # the line reach disk at all. The exception still stops the boot and
+        # reaches whoever ran the command; the log line is the durable record
+        # of why, for a boot run under a supervisor where the console scrolls
+        # away. The import is lazy so config.py at module scope stays free of
+        # the log binding and its settable filename.
+        from .log import calendar_log
+
+        message = " ".join(problems)
+        calendar_log(message, level="ERROR")
+        raise ImproperlyConfigured(message)

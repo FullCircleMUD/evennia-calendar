@@ -2,6 +2,24 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-10 — logging binds through evennia-logging-extension, and the boot check logs again
+
+87 tests. `log.py` is three lines — `calendar_log = make_logger("calendar.log")` — with the call
+sites, the bound name and the filename all unchanged, and the extension declared in `pyproject.toml`.
+It writes the pre-reactor window synchronously, which retires the rule the entry below recorded: a
+line *can* reach disk from `AppConfig.ready()` now.
+
+- **`check_settings()` logs its refusal at ERROR before raising** — `CF-11` and `CF-12`, reinstated
+  with new meanings. Both read the line back from disk; the earlier mocked versions passed while
+  nothing landed, which is why the plan wording forbids mocking the shim.
+- **`SC-02` retired.** The no-op-outside-Evennia contract belonged to the old hand-rolled shim; the
+  extension owns its delivery behaviour and covers it in its own suite.
+- **Validated live in the demo gamedir** — boot line, a WARN, and an ERROR with traceback all
+  delivered to `calendar.log`.
+- One suite trap, documented at the test helper: Evennia caches log-file handles, so a test clearing
+  `LOG_DIR` must truncate, never delete — a removed file leaves the cached handle appending to an
+  unlinked inode and every later line silently vanishes.
+
 ## 2026-09-10 — run against a real game, which found two things the suite could not
 
 86 tests. A demo gamedir under `examples/` boots a real Evennia server with the library installed, and

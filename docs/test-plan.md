@@ -95,6 +95,8 @@ never complains about one that is not.
 | CF-08 | The boot check refuses a float, including a whole-numbered one (`1000.0`) | `test_cf_08_the_check_refuses_a_float` |
 | CF-09 | The refusal names `CALENDAR_STARTING_YEAR`, so a consumer knows which setting to fix | `test_cf_09_the_refusal_names_the_setting` |
 | CF-10 | The boot check refuses a boolean, which Python counts as an integer | `test_cf_10_the_check_refuses_a_boolean` |
+| CF-11 | A refusal is logged to disk at ERROR before the raise — asserted by reading the file back, never by mocking the shim | `test_cf_11_a_refusal_is_logged_to_disk_at_error` |
+| CF-12 | The log line and the exception carry the same problem text, so the file and the console tell one story | `test_cf_12_the_log_line_and_the_exception_carry_the_same_text` |
 
 `CF-07` and `CF-08` are separate cases because they defeat different naive implementations: a
 coercing check (`int(value) > 0`) accepts the string, and a bare comparison (`value > 0`) accepts the
@@ -104,15 +106,12 @@ float. One form to write, as the siblings do.
 `True >= 0`, so the obvious type check accepts `True` and quietly reads it as year 1. Nothing about
 the value looks wrong afterwards, which is what makes it worth a case of its own.
 
-**`check_settings()` logs nothing, and cannot.** `CF-11` and `CF-12` were written to cover a refusal
-reaching `calendar.log`, and a live boot proved they covered nothing: the check runs from
-`AppConfig.ready()` during `django.setup()`, and Evennia's `log_file()` defers every write to the
-reactor's thread pool, which does not exist yet. The deferred is created, never runs, and dies with
-the process — leaving a zero-byte file and no line.
-
-Both cases passed anyway, because they mocked the shim and asserted it was called. They are retired.
-The exception is the only channel at boot, so the message carries everything a consumer needs. See
-`design/library-standards.md` § Logging.
+**`CF-11` and `CF-12` assert delivery, not intent.** The check runs from `AppConfig.ready()` during
+`django.setup()`, before the reactor exists — evennia-logging-extension writes that window
+synchronously, which is what makes a refusal logable at all. A mocked shim asserts only that a call
+was made; an earlier version of these cases did exactly that and passed while no line ever reached
+disk. So both cases read the file back from the suite's `LOG_DIR`. The exception remains the channel
+that stops the boot; the log line is the durable record of why.
 
 There is no "every problem in one raise" case yet — with a single setting there can only ever be one
 problem. It lands with the second setting, if there is one.

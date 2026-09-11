@@ -5,6 +5,7 @@ Every test carries its case ID from docs/test-plan.md as its docstring, so
 the coverage trail reads in both directions.
 """
 
+import os
 from dataclasses import FrozenInstanceError
 from unittest import TestCase, mock
 
@@ -153,6 +154,56 @@ class StartingYearTests(SimpleTestCase):
         """CF-10"""
         with self.assertRaises(ImproperlyConfigured):
             check_settings()
+
+    # CF-11 and CF-12 read the log back from disk rather than mocking the
+    # shim — an earlier, mocked version of these cases passed while no line
+    # ever reached a file. See the CF notes in docs/test-plan.md.
+
+    def _read_back_logs(self):
+        """Everything under the suite's LOG_DIR, as one string."""
+        from django.conf import settings
+
+        text = []
+        for name in sorted(os.listdir(settings.LOG_DIR)):
+            if name.endswith(".log"):
+                path = os.path.join(settings.LOG_DIR, name)
+                with open(path, encoding="utf-8") as handle:
+                    text.append(handle.read())
+        return "\n".join(text)
+
+    def _clear_logs(self):
+        """Empty LOG_DIR's files so a line read back was written by this test.
+
+        Truncated, never removed: Evennia's ``_open_log_file`` caches the
+        handle after the first write, and removing the file leaves that
+        handle appending to an unlinked inode — every later line silently
+        vanishes. An append-mode handle seeks to the end on each write, so a
+        truncated file stays live.
+        """
+        from django.conf import settings
+
+        for name in os.listdir(settings.LOG_DIR):
+            if name.endswith(".log"):
+                with open(os.path.join(settings.LOG_DIR, name), "w"):
+                    pass
+
+    @override_settings(CALENDAR_STARTING_YEAR=-1)
+    def test_cf_11_a_refusal_is_logged_to_disk_at_error(self):
+        """CF-11"""
+        self._clear_logs()
+        with self.assertRaises(ImproperlyConfigured):
+            check_settings()
+        logged = self._read_back_logs()
+        self.assertIn("[ERROR]", logged)
+        self.assertIn(SETTING_STARTING_YEAR, logged)
+
+    @override_settings(CALENDAR_STARTING_YEAR=-1)
+    def test_cf_12_the_log_line_and_the_exception_carry_the_same_text(self):
+        """CF-12"""
+        self._clear_logs()
+        with self.assertRaises(ImproperlyConfigured) as caught:
+            check_settings()
+        self.assertIn(str(caught.exception), self._read_back_logs())
 
 
 class CalendarNamesTests(TestCase):

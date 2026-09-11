@@ -9,9 +9,11 @@ fourth is for being told when it changes.
 
 ## 1. Install the package
 
-Nothing is published yet, so install from a checkout:
+Nothing is published yet, so install from a checkout — and `evennia-logging-extension`, the one
+dependency beyond Evennia itself, is also unpublished, so it installs from its own checkout first:
 
 ```
+pip install -e path/to/evennia-logging-extension
 pip install -e path/to/evennia-calendar
 ```
 
@@ -25,6 +27,10 @@ INSTALLED_APPS += ["evennia_calendar"]
 
 **This is what runs the boot check.** Leave it out and the library is importable and validates
 nothing, so a mistyped `CALENDAR_STARTING_YEAR` reaches the arithmetic instead of being refused.
+
+A refusal is logged to `calendar.log` at ERROR before it is raised, so the reason survives after the
+console scrolls. Everything the library logs goes to `calendar.log` under `settings.LOG_DIR`, beside
+Evennia's own logs.
 
 ## 3. Choose what year your world starts in
 
@@ -228,9 +234,9 @@ The library ships ten day names and twelve month names so it is not empty. They 
 are the Balinese Pawukon calendar's Dasawara cycle, the months are from Old Javanese inscriptions —
 and they are almost certainly not what your world calls them.
 
-You are not expected to override anything. A `GameDate` carries **numbers**: `day_of_week` 0–9 and
-`month` 0–11. `DAY_NAMES` and `MONTH_NAMES` are a convenience for games with no opinion. A game with
-one indexes its own tuple with the same number and never imports ours.
+You are not expected to override anything. A `GameDate` carries **numbers**: `day_of_week` 1–10 and
+`month` 1–12. `DAY_NAMES` and `MONTH_NAMES` are a convenience for games with no opinion. A game with
+one indexes its own tuple with the same number minus one and never imports ours.
 
 Seasons are different. `Season` is an enum rather than a name, because a game branches on it —
 `Season.WINTER`, not `season == 3` — and spring, summer, autumn and winter are what those seasons are

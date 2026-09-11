@@ -54,6 +54,7 @@ cd evennia-calendar
 python -m venv venv
 # Activate the venv (platform-specific)
 pip install evennia
+pip install -e path/to/evennia-logging-extension  # sibling dependency, not on PyPI
 pip install -e .
 python runtests.py
 ```

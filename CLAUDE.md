@@ -28,20 +28,21 @@ For the design wiki, read [docs/INDEX.md](docs/INDEX.md).
 
 ## Project status
 
-**Feature complete, and proven against a real game.** 86 tests passing, plus a demo gamedir under
+**Feature complete, and proven against a real game.** 87 tests passing, plus a demo gamedir under
 `examples/` that boots a real Evennia server with the library installed.
 
 `from evennia_calendar import game_date` returns the whole date and time of day — ten fields, every
-calendar position counting from one, the clock from zero. A bad setting is refused at boot — by
-raising, which is the only channel that early; see [docs/progress.md](docs/progress.md).
+calendar position counting from one, the clock from zero. A bad setting is refused at boot — logged
+to `calendar.log` at ERROR, then raised; see [docs/progress.md](docs/progress.md).
 
 `start_calendar_clock()` ticks once a real second and sends a Django signal for each unit that turned
 over — seven built-ins, plus any a consumer registers with `register_signal()` for a condition of
 their own. See [docs/progress.md](docs/progress.md).
 
 The live run found two bugs the suite could not — every field arriving as a float, and boot-check
-logging that never wrote a line. Both are recorded in [docs/progress.md](docs/progress.md); the second
-became a project-level rule in [library-standards.md](../../design/library-standards.md).
+logging that never wrote a line. Both are recorded in [docs/progress.md](docs/progress.md); the
+second is why logging binds through `evennia-logging-extension`, which writes the pre-reactor window
+synchronously. See [library-standards.md](../../design/library-standards.md) § Logging.
 
 ## Where to read first
 
