@@ -28,16 +28,23 @@ For the design wiki, read [docs/INDEX.md](docs/INDEX.md).
 
 ## Project status
 
-**Feature complete, and proven against a real game.** 87 tests passing, plus a demo gamedir under
+**Feature complete, and proven against a real game.** 104 tests passing, plus a demo gamedir under
 `examples/` that boots a real Evennia server with the library installed.
 
-`from evennia_calendar import game_date` returns the whole date and time of day — ten fields, every
-calendar position counting from one, the clock from zero. A bad setting is refused at boot — logged
-to `calendar.log` at ERROR, then raised; see [docs/progress.md](docs/progress.md).
+`from evennia_calendar import game_date` returns the whole date and time of day — eleven fields,
+every calendar position counting from one, the clock from zero. A bad setting is refused at boot —
+logged to `calendar.log` at ERROR, then raised; see [docs/progress.md](docs/progress.md).
 
 `start_calendar_clock()` ticks once a real second and sends a Django signal for each unit that turned
 over — seven built-ins, plus any a consumer registers with `register_signal()` for a condition of
-their own. See [docs/progress.md](docs/progress.md).
+their own. A consumer's key is evaluated every tick, whether or not the calendar moved: when their
+condition is worth asking is not ours to decide. See [docs/progress.md](docs/progress.md).
+
+**`elapsed_real_seconds` is the one field that is not derived.** Every other value is a function of
+`gametime()` and scales with `TIME_FACTOR`; this one is a count the clock keeps, in real seconds, so
+a consumer can key a cadence that does not scale. It cannot be recomputed and starts from zero with
+the Server process — which is the carve-out to principle 4 below, stated plainly rather than argued
+around.
 
 The live run found two bugs the suite could not — every field arriving as a float, and boot-check
 logging that never wrote a line. Both are recorded in [docs/progress.md](docs/progress.md); the
@@ -77,14 +84,15 @@ Every implementation decision must respect them.
    code. See [test-first-process.md](../../design/test-first-process.md) for the process and the
    rationale.
 
-4. **The calendar is derived, never stored.** Every value the library reports is a function of the
-   number Evennia hands back. No tables, no `ndb`, no migration — so it survives a reload and every
-   process in a multi-process deployment computes the same answer without coordinating.
+4. **The calendar is derived, never stored.** Every *calendar* value the library reports is a function
+   of the number Evennia hands back. No tables, no `ndb`, no migration — so it survives a reload and
+   every process in a multi-process deployment computes the same answer without coordinating.
 
-   The clock in `service.py` does remember the last date it saw, and consumers' registrations live
-   beside it. That is **transient module state, not calendar state**: it dies with the Server process
-   and is rebuilt from the clock on the next tick, and nothing about a date depends on it. The
-   principle protects the derivation, not a vow that the library holds nothing.
+   Three things sit beside that derivation and are not part of it: the last date the clock saw,
+   consumers' registrations, and `elapsed_real_seconds`. All are module state in the Server process
+   and die with it. The first two are rebuilt on the next tick; the third is a count and cannot be,
+   so it restarts at zero. That is accepted — a real-time cadence needs a real-time source, and there
+   is no derivation that would give one.
 
 5. **Evennia owns the clock; this library owns the calendar.** We read the game seconds and do our own
    integer division. **Never `datetime`.** Reading the game timestamp through `datetime.fromtimestamp`
@@ -187,7 +195,7 @@ evennia-calendar/
 │   └── evennia_calendar/      # library code (src layout)
 │       ├── __init__.py
 │       ├── apps.py            # AppConfig — ready() runs the boot check
-│       ├── clock.py           # GameDate, game_date(), and the conversions
+│       ├── clock.py           # GameDate, game_date(), the conversions, the real-second count
 │       ├── config.py          # the setting, its accessor, check_settings()
 │       ├── service.py         # the LoopingCall, the comparison, the dispatch
 │       ├── signals.py         # the seven Signal objects consumers connect to
@@ -223,5 +231,6 @@ more than one game may be running from this machine.
 - **[../evennia-survival/](../evennia-survival/)** — the closest reference shape for repo structure,
   the test runner, and the docs surfaces. Also a likely consumer: hunger and thirst are the mechanics
   a calendar-driven weather layer would first reach for.
-- **[../evennia-shards/](../evennia-shards/)** — documents how state behaves when the game runs as
-  more than one process. This library's answer is to hold none, which is worth reading against.
+- **[../evennia-scaling/](../evennia-scaling/)** — documents how state behaves when the game runs as
+  more than one process, in [docs/where-state-changes.md](../evennia-scaling/docs/where-state-changes.md).
+  This library's answer is to hold almost none, which is worth reading against.

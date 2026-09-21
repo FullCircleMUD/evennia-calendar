@@ -73,6 +73,16 @@ class GameDate:
     minute: int
     phase: int
 
+    #: Real seconds since the clock started — the one field that is not a
+    #: position in game time. Every other field moves at ``TIME_FACTOR``; this
+    #: one moves at a second per second, so a consumer wanting a cadence in
+    #: real time keys on it: ``lambda d: d.elapsed_real_seconds // 20``.
+    #:
+    #: A float, because ``start_calendar_clock()`` takes its interval as one.
+    #: It is counted by the clock rather than derived from ``gametime()``, so
+    #: it starts from zero each time the Server process does.
+    elapsed_real_seconds: float
+
 
 def _day_number(elapsed_seconds: float) -> int:
     """Return the absolute day count for a number of elapsed game seconds.
@@ -162,6 +172,32 @@ def _phase(hour: int) -> int:
     return hour // HOURS_PER_WATCH
 
 
+#: Real seconds since the clock started. The one value here that is counted
+#: rather than derived — see ``GameDate.elapsed_real_seconds``. It lives beside
+#: ``game_date()`` rather than in ``service.py`` because the factory has to read
+#: it, and ``service`` already imports this module.
+_elapsed_real_seconds = 0.0
+
+
+def advance_real_seconds(seconds: float) -> None:
+    """Add one tick's worth of real time to the count."""
+    global _elapsed_real_seconds
+
+    _elapsed_real_seconds += seconds
+
+
+def reset_real_seconds() -> None:
+    """Return the count to zero. Called when the clock starts and stops."""
+    global _elapsed_real_seconds
+
+    _elapsed_real_seconds = 0.0
+
+
+def elapsed_real_seconds() -> float:
+    """Return the real seconds counted since the clock started."""
+    return _elapsed_real_seconds
+
+
 def game_date() -> GameDate:
     """Return the game world's date now.
 
@@ -191,4 +227,5 @@ def game_date() -> GameDate:
         hour=hour,
         minute=_minute(seconds_into_day),
         phase=_phase(hour) + 1,
+        elapsed_real_seconds=_elapsed_real_seconds,
     )

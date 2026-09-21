@@ -12,7 +12,7 @@ The comparison is a pure function taking two dates, so the lifecycle is
 testable without a reactor and the arithmetic is testable without a clock.
 """
 
-from .clock import game_date
+from .clock import advance_real_seconds, game_date, reset_real_seconds
 from .config import UNIT_FIELDS, UNIT_SIGNALS
 from .log import calendar_log
 
@@ -33,13 +33,23 @@ _registered = {}
 
 
 def _changed_units(previous, current) -> frozenset:
-    """Return the units that turned over between two dates.
+    """Return everything that fired between two ticks — units and consumers'.
 
     A unit turned over if it or anything coarser did, so each comparison
     carries its coarser fields with it — two dates a year apart share a
     day-of-year and are not the same day.
+
+    Consumers' registrations are unioned in, **not gated on a unit having
+    turned over.** Whether their condition is worth checking is theirs to
+    decide, not the calendar's: a key on anything we do not track — the
+    real-second count is the standing example — would otherwise only be asked
+    on the ticks where an hour or a day happened to move, and one that changes
+    and changes back between two of those is lost rather than delayed.
+
+    One set, because the two kinds of name cannot collide: ``register_signal()``
+    refuses any name in ``UNIT_FIELDS``.
     """
-    return frozenset(
+    units = frozenset(
         unit
         for unit, fields in UNIT_FIELDS.items()
         if any(
@@ -47,6 +57,7 @@ def _changed_units(previous, current) -> frozenset:
             for field in fields
         )
     )
+    return units | _triggered_registrations(previous, current)
 
 
 def register_signal(signal, key, name: str) -> None:
@@ -91,20 +102,41 @@ def unregister_signal(name: str) -> None:
     _registered.pop(name, None)
 
 
+def _triggered_registrations(previous, current) -> frozenset:
+    """Return the names of the consumers' keys that fired between two ticks.
+
+    The mirror of ``_changed_units()``, over conditions the consumer wrote
+    instead of fields this library defined. What it compares is two ticks — the
+    dates are how a tick is represented, and nothing obliges a key to be about
+    the calendar at all.
+
+    ``list()`` because a receiver is free to register or unregister while this
+    runs, and a dict cannot change size mid-iteration.
+    """
+    return frozenset(
+        name
+        for name, (key, _signal) in list(_registered.items())
+        if _key_changed(name, key, previous, current)
+    )
+
+
 def _dispatch(previous, current, changed) -> None:
-    """Send a signal for each unit that turned over.
+    """Send a signal for each name that fired.
+
+    ``changed`` carries both kinds — the built-in units and the consumers'
+    registrations — so this looks each name up rather than deciding again. A
+    key is evaluated once per tick, in ``_triggered_registrations()``.
 
     ``send_robust`` rather than ``send``: it catches each receiver's exception
     and hands it back, so one consumer's broken handler cannot silence the
     subscriber behind it. Their bug is theirs to fix — we log it and carry on.
     """
-    for unit in changed:
-        signal = UNIT_SIGNALS.get(unit)
+    for name in changed:
+        signal = UNIT_SIGNALS.get(name)
+        if signal is None:
+            registration = _registered.get(name)
+            signal = registration[1] if registration else None
         if signal is not None:
-            _send(unit, signal, previous, current)
-
-    for name, (key, signal) in list(_registered.items()):
-        if _key_changed(name, key, previous, current):
             _send(name, signal, previous, current)
 
 
@@ -182,7 +214,14 @@ def _guarded_tick() -> None:
     quietly dead while the game looks healthy. The realistic source is a
     consumer's own handler, which is not ours to fix — so it is logged with its
     traceback and the clock carries on.
+
+    The real-second count is advanced **before** the guard, not inside it: real
+    time passed whether or not a receiver worked, and counting after the
+    dispatch would let one game's broken handler freeze the cadence for every
+    other consumer.
     """
+    advance_real_seconds(_clock.interval)
+
     try:
         _tick()
     except Exception:
@@ -209,6 +248,7 @@ def start_calendar_clock(interval: float = 1.0, clock=None):
     if _clock is not None and _clock.running:
         return _clock
 
+    reset_real_seconds()
     _clock = LoopingCall(_guarded_tick)
     if clock is not None:
         _clock.clock = clock
@@ -228,3 +268,4 @@ def stop_calendar_clock() -> None:
     _clock.stop()
     _clock = None
     _remembered = None
+    reset_real_seconds()

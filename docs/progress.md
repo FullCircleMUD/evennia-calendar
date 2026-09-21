@@ -2,6 +2,35 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-20 — a cadence in real time, and the dispatch that was dropping it
+
+104 tests. `GameDate` gained an eleventh field and the dispatch gained the tick it was missing. The
+two arrived together because the first is useless without the second.
+
+- **`elapsed_real_seconds`** — real seconds since the clock started, counted by the clock rather than
+  derived from `gametime()`. Every other field scales with `TIME_FACTOR`; this one does not, so a
+  consumer wanting twenty *real* seconds writes `date.elapsed_real_seconds // 20` and gets it at any
+  game speed. The `RT` cases. It cannot be recomputed, so it starts from zero with the Server process
+  — the one value here that is not derived.
+- **Advanced before the dispatch, not after** (`RT-07`). Real time passed whether or not a receiver
+  worked; counting afterwards would let one game's broken handler freeze the cadence for every other
+  consumer.
+- **A consumer's key is now evaluated every tick.** `_triggered_registrations()` asks every
+  registration and unions the names into `changed`, so the set reaching the dispatcher carries both
+  kinds and `_dispatch()` looks each name up rather than deciding again. Each key runs once a tick.
+
+**The bug this fixed had never been exercised.** `_tick()` only dispatched when a built-in unit turned
+over, and consumer keys were checked *inside* the dispatch — so a key not aligned to a calendar unit
+was simply never asked. Every existing `RS` case keys on a calendar field (`day_of_year // 10` and
+the like), which fires on a tick where `day` turned over anyway, so nine passing cases said nothing
+about it.
+
+Found by running the real consumer path rather than the suite: a `// 20` real-second key at
+`TIME_FACTOR 360` fired **zero** times in 25 seconds. The failure is silent and it is a loss, not a
+delay — by the next dispatch the key has stopped changing, so nothing catches up. `RS-08` is the
+case that would have caught it, `CU-08` the one that pins the union, and `TR-05` covers a raising key
+no longer taking the registrations behind it in the set.
+
 ## 2026-09-10 — logging binds through evennia-logging-extension, and the boot check logs again
 
 87 tests. `log.py` is three lines — `calendar_log = make_logger("calendar.log")` — with the call

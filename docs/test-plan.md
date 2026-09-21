@@ -30,6 +30,8 @@ seems likely.
 | `TD` | `_seconds_into_day()`, `_hour()` and `_minute()` — the time of day |
 | `PH` | `_phase()` — an hour to one of the six four-hour watches |
 | `GD` | `GameDate` and `game_date()` — the frozen result, and the factory that reads the clock and composes one |
+| `RT` | `elapsed_real_seconds` — the count of real time since the clock started, untouched by `TIME_FACTOR` |
+| `TR` | `_triggered_registrations()` — which consumers' keys fired between one tick and the next |
 | `CU` | `_changed_units()` — which units turned over between two dates |
 | `CK` | The clock — starting, stopping, remembering, and surviving a hook that raises |
 | `SG` | The signals a consumer subscribes to, and how a raising subscriber is handled |
@@ -43,7 +45,7 @@ The fake objects the suite needs, named and purposed.
 |---|---|
 | `django.test.override_settings` | Declares, changes or removes `CALENDAR_STARTING_YEAR` per case. The `CF` cases need nothing beyond it — there is one setting and it holds a plain value |
 | `mock.patch("evennia_calendar.clock.gametime")` | The fake clock. Patched at the library's import site, not at Evennia's, so nothing else in the process is affected |
-| `date_at(elapsed_seconds)` | Builds the `GameDate` for a number of elapsed game seconds. The `CU` cases need pairs of dates, and one built this way cannot be internally inconsistent the way one assembled field by field can |
+| `date_at(elapsed_seconds, real_seconds=None)` | Builds the `GameDate` for a number of elapsed game seconds. The `CU` cases need pairs of dates, and one built this way cannot be internally inconsistent the way one assembled field by field can. `real_seconds` pins `elapsed_real_seconds`, needed wherever a case compares a date built now against one the clock built on an earlier tick |
 | `twisted.internet.task.Clock` | Drives the `LoopingCall` without a reactor, so the `CK` cases advance time rather than waiting for it. `start_calendar_clock()` takes it as an argument; production leaves it alone |
 
 The `DN`, `DY` and `YR` cases need no fixtures at all: each helper takes integers and returns
@@ -324,6 +326,77 @@ tuple counts from zero — and `GD-02` is where dropping a `+ 1` at assembly get
 `GD-01` builds its instance through `game_date()` rather than constructing one by hand, so it does not
 have to be edited every time the dataclass gains a field.
 
+**`elapsed_real_seconds` is the one field `GD-04` does not cover**, and the one field that is not
+derived from `gametime()`. It is a float because the clock's interval is one, and a whole number of
+seconds cannot be promised when `start_calendar_clock()` takes that interval as an argument. `GD-02`
+still widens to include it; `GD-04`'s list does not.
+
+### `RT` — `elapsed_real_seconds`
+
+Real time since the clock started, in seconds. Every other field on `GameDate` is a position in game
+time and moves at `TIME_FACTOR`; this one moves at one second per second and is what a consumer keys
+on when they mean a cadence in real time.
+
+**It is a count kept by the clock, not a reading taken from one.** `service.py` advances it by the
+interval on each tick and `clock.py` carries it onto the date — so unlike every other field, it
+cannot be recomputed and does not survive the Server process. See the note below.
+
+| ID | Case | Test function |
+|---|---|---|
+| RT-01 | Before the clock has started, the count is zero | `test_rt_01_the_count_is_zero_before_the_clock_starts` |
+| RT-02 | Each tick advances the count by the clock's interval — three ticks at the default of 1.0 gives 3.0 | `test_rt_02_each_tick_advances_the_count_by_the_interval` |
+| RT-03 | A clock started on a non-default interval advances by that interval, not by one — three ticks at 0.5 gives 1.5 | `test_rt_03_a_non_default_interval_advances_by_that_interval` |
+| RT-04 | `TIME_FACTOR` does not touch the count — the same number of ticks gives the same count however the game clock is scaled | `test_rt_04_the_count_ignores_the_game_clock` |
+| RT-05 | Starting the clock resets the count to zero, as it does the remembered date | `test_rt_05_starting_the_clock_resets_the_count` |
+| RT-06 | Stopping the clock resets the count to zero | `test_rt_06_stopping_the_clock_resets_the_count` |
+| RT-07 | A tick whose dispatch raises still advances the count — real time passed whether or not a receiver worked | `test_rt_07_a_raising_dispatch_still_advances_the_count` |
+| RT-08 | `game_date()` carries the current count, and a date taken two ticks later carries a larger one | `test_rt_08_the_date_carries_the_count` |
+
+`RT-04` is the case the field exists for. Every other field on the date is scaled by `TIME_FACTOR`,
+so an implementation that derived this one from `gametime()` would look correct at `TIME_FACTOR 1`
+and be wrong by a factor of 360 in a fast game — which is exactly the mistake that produced this
+field. Patch `gametime` to a scaled value and assert the count ignores it.
+
+`RT-07` guards the cadence against a consumer's broken handler. `_guarded_tick()` swallows the
+exception so the clock survives; if the count were advanced after the dispatch instead of before it,
+one game's bad receiver would freeze real time for every other consumer's signal.
+
+`RT-02` and `RT-03` are separate because an implementation that increments by one passes `RT-02` and
+fails `RT-03`. One is the default interval, not the definition of a tick.
+
+### `TR` — `_triggered_registrations()`
+
+Runs every consumer's key function against the last tick and this one, and returns the names whose
+answer moved. `_changed_units()` calls it and unions the result, so one set reaches the dispatcher
+and the two kinds of name travel the same path.
+
+**What it compares is two ticks, not two dates.** The two `GameDate`s it takes are how a tick is
+represented, and nothing obliges a consumer's key to be about the calendar at all — a key on
+`elapsed_real_seconds` asks a question the date has no opinion on.
+
+**The mirror of `_changed_units()`, over the consumer's conditions instead of the library's fields.**
+The difference that matters: this one executes code the library did not write, so a key that raises
+is caught here rather than allowed to lose the registrations behind it in the set.
+
+Names cannot collide — `register_signal()` already refuses any name in `UNIT_FIELDS` — which is what
+makes one combined set safe.
+
+| ID | Case | Test function |
+|---|---|---|
+| TR-01 | Nothing registered returns an empty frozenset | `test_tr_01_nothing_registered_fires_nothing` |
+| TR-02 | A registration whose key returns a different value for the two dates is named in the result | `test_tr_02_a_key_whose_answer_moved_is_named` |
+| TR-03 | A registration whose key returns the same value for both is not | `test_tr_03_a_key_whose_answer_held_is_not_named` |
+| TR-04 | With two registered and one firing, only the one that fired is named | `test_tr_04_only_the_registration_that_fired_is_named` |
+| TR-05 | A key that raises is left out of the result, and a registration after it in the dict still reports | `test_tr_05_a_raising_key_does_not_lose_the_others` |
+
+`TR-05` is the case for the guard. `RS-04` already proves a raising key is logged and does not
+silence the built-in units, but that is the dispatch path — this is the set being built, and a key
+raising inside a comprehension would abandon every registration after it. The two failures are
+different and only one of them is currently covered.
+
+`TR-02` and `TR-03` deliberately key on something the calendar does not track, so the function is
+proven against the case that motivated it rather than one a unit comparison would also have caught.
+
 ### `CU` — `_changed_units()`
 
 Takes two `GameDate`s, returns a frozenset of the units that turned over between them. Internal: it is
@@ -344,9 +417,23 @@ comparison carries its coarser fields with it: day is `(year, day_of_year)`, pha
 | CU-03 | 03:59 → 04:00 returns `{"hour", "phase"}` — the watch turns with the hour | `test_cu_03_the_watch_turns_with_the_hour` |
 | CU-04 | The last hour of a year to the first hour of the next returns all seven unit names | `test_cu_04_the_turn_of_a_year_changes_every_unit` |
 | CU-05 | The same day of the year, one year apart, returns `"day"` as well as `"year"` | `test_cu_05_the_same_day_a_year_apart_is_not_the_same_day` |
+| CU-06 | Two dates sharing every calendar field and differing only in `elapsed_real_seconds` return an empty frozenset | `test_cu_06_the_real_second_count_is_not_a_unit` |
+| CU-07 | A fired registration is in the result alongside any units that turned over, so one set carries both | `test_cu_07_a_fired_registration_joins_the_units` |
+| CU-08 | A fired registration is in the result when **no** unit turned over — the union is not conditional on the calendar having moved | `test_cu_08_a_fired_registration_needs_no_unit_to_turn_over` |
 
 `CU-05` is the case that forces the coarser-fields rule. It cannot happen on a one-second tick, but
 the function is pure and should be right regardless of who calls it.
+
+`CU-08` is the whole point of the change. A consumer's condition is theirs, and whether it is worth
+checking is not the calendar's judgement to make — so the union happens whether or not a unit moved.
+Without it, a key on anything the calendar does not track is only ever asked on the ticks where an
+hour or a day happened to turn over, and a key that changes and changes back between two such ticks
+is lost rather than delayed.
+
+`CU-06` guards the one field that differs on every single tick. `_changed_units()` reads `UNIT_FIELDS`
+and nothing else, so it is right today — but a rewrite comparing the dataclass's fields generically
+would see `elapsed_real_seconds` change every second and fire all seven signals every second. The
+game would look busy rather than broken, which is what makes it worth pinning.
 
 ### `CK` — the clock
 
@@ -451,6 +538,14 @@ whatever runs at startup.
 | RS-05 | `unregister_signal()` removes a consumer's registration, and it no longer fires | `test_rs_05_unregistering_removes_a_consumers_registration` |
 | RS-06 | Registering under a name a built-in unit uses is refused | `test_rs_06_a_name_a_built_in_unit_uses_is_refused` |
 | RS-07 | `unregister_signal()` refuses to remove a built-in unit | `test_rs_07_a_built_in_unit_cannot_be_unregistered` |
+| RS-08 | A registered signal fires on a tick where **no** calendar unit turned over — a consumer's key is checked every tick, not only when the calendar moved | `test_rs_08_a_registration_fires_on_a_tick_with_no_unit_turning` |
+
+`RS-08` is the case every other `RS` case was blind to. Each of them keys on a calendar field —
+`date.day_of_year // 10` and the like — so the tick their key changes on is always a tick where a
+built-in unit turned over too. That hid a guard in `_tick()` which only ran the dispatch when a unit
+had changed, so a key derived from anything else was never asked. `elapsed_real_seconds` is exactly
+such a key, and the failure is silent: the signal is not delayed to the next dispatch, it is lost,
+because by then the key has stopped changing.
 
 **A name in use is refused, never replaced.** Two developers on one game can both reach for
 `"market_day"`, and the second silently clobbering the first is the worst outcome — the first

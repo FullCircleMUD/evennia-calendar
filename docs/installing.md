@@ -64,6 +64,7 @@ date = game_date()
 | `hour` | 0–23 | |
 | `minute` | 0–59 | |
 | `phase` | 1–6 | `PHASE_NAMES[date.phase - 1]` |
+| `elapsed_real_seconds` | from 0 | real seconds since the clock started |
 
 **Every calendar position counts from one**, because nobody writes "0/0/1000". So a name lookup takes
 the offset back off: `MONTH_NAMES[date.month - 1]`. One rule, no exceptions to remember.
@@ -73,6 +74,11 @@ zeroth hour. That is a clock, not a calendar position.
 
 `season` carries the enum rather than a number, because a game branches on it — `if date.season is
 Season.WINTER` — rather than displaying it.
+
+`elapsed_real_seconds` is not a calendar position at all. Every other field moves at `TIME_FACTOR`;
+this one counts real seconds and does not scale, so a subsystem wanting a cadence in real time keys
+on it. See [custom-signals.md](custom-signals.md) § A cadence in real time. It is counted rather than
+derived, so it starts from zero each time the Server process does.
 
 ```python
 from evennia_calendar.config import DAY_NAMES, MONTH_NAMES, PHASE_NAMES

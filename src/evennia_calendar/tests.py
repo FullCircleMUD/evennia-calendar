@@ -13,8 +13,12 @@ from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase, override_settings
 
 import evennia_calendar
+from evennia_calendar import clock
 from evennia_calendar.clock import (
     GameDate,
+    advance_real_seconds,
+    elapsed_real_seconds,
+    reset_real_seconds,
     _day_number,
     _day_of_month,
     _day_of_week,
@@ -41,8 +45,11 @@ from evennia_calendar.config import (
     get_starting_year,
 )
 from evennia_calendar import service
+from django.dispatch import Signal
+
 from evennia_calendar.service import (
     _changed_units,
+    _triggered_registrations,
     register_signal,
     start_calendar_clock,
     stop_calendar_clock,
@@ -63,16 +70,26 @@ ALL_UNITS = frozenset(
 )
 
 
-def date_at(elapsed_seconds):
+def date_at(elapsed_seconds, real_seconds=None):
     """Build the GameDate for a number of elapsed game seconds.
 
-    Cheaper and safer than hand-writing ten fields: a date built this way
+    Cheaper and safer than hand-writing the fields: a date built this way
     cannot be internally inconsistent, which one assembled by hand can.
+
+    ``real_seconds`` pins ``elapsed_real_seconds`` on the result. It is needed
+    wherever a case compares a date built now against one the clock built on an
+    earlier tick — the count has moved since, so the two would differ on that
+    field alone. Left out, the date carries whatever the count stands at.
     """
     with mock.patch(
         "evennia_calendar.clock.gametime", return_value=elapsed_seconds
     ):
-        return game_date()
+        if real_seconds is None:
+            return game_date()
+        with mock.patch.object(
+            clock, "_elapsed_real_seconds", real_seconds
+        ):
+            return game_date()
 
 
 class ScaffoldTests(TestCase):
@@ -444,6 +461,136 @@ class ChangedUnitsTests(SimpleTestCase):
         self.assertIn("day", changed)
         self.assertEqual(changed, ALL_UNITS)
 
+    def test_cu_06_the_real_second_count_is_not_a_unit(self):
+        """CU-06"""
+        # The same moment in game time, counted from two different real
+        # seconds. Nothing on the calendar turned over.
+        at_ten = 10 * 3600
+        self.assertEqual(
+            _changed_units(
+                date_at(at_ten, real_seconds=41.0),
+                date_at(at_ten, real_seconds=42.0),
+            ),
+            frozenset(),
+        )
+
+    def test_cu_07_a_fired_registration_joins_the_units(self):
+        """CU-07"""
+        register_signal(
+            Signal(), key=lambda d: d.elapsed_real_seconds // 20, name="regen"
+        )
+        try:
+            changed = _changed_units(
+                date_at(10 * 3600, real_seconds=19.0),
+                date_at(11 * 3600, real_seconds=20.0),
+            )
+        finally:
+            unregister_signal("regen")
+
+        self.assertEqual(changed, frozenset({"hour", "regen"}))
+
+    def test_cu_08_a_fired_registration_needs_no_unit_to_turn_over(self):
+        """CU-08"""
+        register_signal(
+            Signal(), key=lambda d: d.elapsed_real_seconds // 20, name="regen"
+        )
+        try:
+            # The same moment in game time — nothing on the calendar moved.
+            changed = _changed_units(
+                date_at(10 * 3600, real_seconds=19.0),
+                date_at(10 * 3600, real_seconds=20.0),
+            )
+        finally:
+            unregister_signal("regen")
+
+        self.assertEqual(changed, frozenset({"regen"}))
+
+
+class TriggeredRegistrationsTests(SimpleTestCase):
+    """TR — which consumers' keys fired between one tick and the next."""
+
+    def setUp(self):
+        from django.dispatch import Signal
+
+        self.signal = Signal()
+        self.registered = []
+
+    def tearDown(self):
+        for name in self.registered:
+            unregister_signal(name)
+
+    def _register(self, key, name):
+        self.registered.append(name)
+        register_signal(self.signal, key=key, name=name)
+
+    def test_tr_01_nothing_registered_fires_nothing(self):
+        """TR-01"""
+        self.assertEqual(
+            _triggered_registrations(
+                date_at(0, real_seconds=1.0), date_at(0, real_seconds=2.0)
+            ),
+            frozenset(),
+        )
+
+    def test_tr_02_a_key_whose_answer_moved_is_named(self):
+        """TR-02"""
+        # Keyed on the real-second count, which no calendar unit tracks — the
+        # case the function exists for.
+        self._register(lambda d: d.elapsed_real_seconds // 20, "regen")
+
+        self.assertEqual(
+            _triggered_registrations(
+                date_at(0, real_seconds=19.0), date_at(0, real_seconds=20.0)
+            ),
+            frozenset({"regen"}),
+        )
+
+    def test_tr_03_a_key_whose_answer_held_is_not_named(self):
+        """TR-03"""
+        self._register(lambda d: d.elapsed_real_seconds // 20, "regen")
+
+        self.assertEqual(
+            _triggered_registrations(
+                date_at(0, real_seconds=20.0), date_at(0, real_seconds=21.0)
+            ),
+            frozenset(),
+        )
+
+    def test_tr_04_only_the_registration_that_fired_is_named(self):
+        """TR-04"""
+        self._register(lambda d: d.elapsed_real_seconds // 20, "regen")
+        self._register(lambda d: d.elapsed_real_seconds // 1200, "meter")
+
+        self.assertEqual(
+            _triggered_registrations(
+                date_at(0, real_seconds=19.0), date_at(0, real_seconds=20.0)
+            ),
+            frozenset({"regen"}),
+        )
+
+    def test_tr_05_a_raising_key_does_not_lose_the_others(self):
+        """TR-05"""
+        def explode(date):
+            raise RuntimeError("boom")
+
+        # Registered first, so a comprehension that let the exception escape
+        # would abandon the registration behind it.
+        self._register(explode, "broken")
+        self._register(lambda d: d.elapsed_real_seconds // 20, "regen")
+
+        with mock.patch.object(service, "calendar_log") as logged:
+            triggered = _triggered_registrations(
+                date_at(0, real_seconds=19.0), date_at(0, real_seconds=20.0)
+            )
+
+        self.assertEqual(triggered, frozenset({"regen"}))
+        errors = [
+            call
+            for call in logged.call_args_list
+            if call.kwargs.get("level") == "ERROR"
+        ]
+        self.assertEqual(len(errors), 1)
+
 
 class CalendarClockTests(SimpleTestCase):
     """CK — starting, stopping, remembering, and surviving a raising hook."""
@@ -500,7 +647,7 @@ class CalendarClockTests(SimpleTestCase):
                 reactor.advance(1)
 
         dispatched.assert_not_called()
-        self.assertEqual(service._remembered, date_at(0))
+        self.assertEqual(service._remembered, date_at(0, real_seconds=1.0))
 
     def test_ck_06_a_tick_with_nothing_turned_over_announces_nothing(self):
         """CK-06"""
@@ -525,10 +672,15 @@ class CalendarClockTests(SimpleTestCase):
                 reactor.advance(1)
                 reactor.advance(1)
 
+        # The two dates were built on consecutive ticks, so they differ in
+        # their real-second count as well as the hour — pin each to the count
+        # standing when the clock built it.
         dispatched.assert_called_once_with(
-            date_at(before), date_at(after), frozenset({"hour"})
+            date_at(before, real_seconds=1.0),
+            date_at(after, real_seconds=2.0),
+            frozenset({"hour"}),
         )
-        self.assertEqual(service._remembered, date_at(after))
+        self.assertEqual(service._remembered, date_at(after, real_seconds=2.0))
 
     def test_ck_08_a_raising_dispatch_does_not_stop_the_clock(self):
         """CK-08"""
@@ -556,6 +708,121 @@ class CalendarClockTests(SimpleTestCase):
         ]
         self.assertEqual(len(errors), 1)
         self.assertTrue(errors[0].kwargs.get("trace"))
+
+
+class RealSecondsTests(SimpleTestCase):
+    """RT — the real-time count, and its independence from TIME_FACTOR."""
+
+    def setUp(self):
+        reset_real_seconds()
+
+    def tearDown(self):
+        stop_calendar_clock()
+        reset_real_seconds()
+
+    @staticmethod
+    def _fake_reactor():
+        from twisted.internet.task import Clock
+
+        return Clock()
+
+    def test_rt_01_the_count_is_zero_before_the_clock_starts(self):
+        """RT-01"""
+        self.assertEqual(elapsed_real_seconds(), 0)
+
+    def test_rt_02_each_tick_advances_the_count_by_the_interval(self):
+        """RT-02"""
+        reactor = self._fake_reactor()
+        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+            start_calendar_clock(clock=reactor)
+            reactor.advance(1)
+            reactor.advance(1)
+            reactor.advance(1)
+
+        self.assertEqual(elapsed_real_seconds(), 3.0)
+
+    def test_rt_03_a_non_default_interval_advances_by_that_interval(self):
+        """RT-03"""
+        reactor = self._fake_reactor()
+        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+            start_calendar_clock(interval=0.5, clock=reactor)
+            reactor.advance(0.5)
+            reactor.advance(0.5)
+            reactor.advance(0.5)
+
+        # 1.5, not 3 — an implementation that increments by one passes RT-02
+        # and fails here.
+        self.assertEqual(elapsed_real_seconds(), 1.5)
+
+    def test_rt_04_the_count_ignores_the_game_clock(self):
+        """RT-04"""
+        reactor = self._fake_reactor()
+        # A fast game: every read of gametime() is 360 game seconds further on
+        # than the last, while only one real second passed between them.
+        scaled = [n * 360 for n in range(10)]
+        with mock.patch(
+            "evennia_calendar.clock.gametime", side_effect=scaled
+        ):
+            start_calendar_clock(clock=reactor)
+            reactor.advance(1)
+            reactor.advance(1)
+
+        self.assertEqual(elapsed_real_seconds(), 2.0)
+
+    def test_rt_05_starting_the_clock_resets_the_count(self):
+        """RT-05"""
+        advance_real_seconds(99)
+
+        reactor = self._fake_reactor()
+        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+            start_calendar_clock(clock=reactor)
+
+        self.assertEqual(elapsed_real_seconds(), 0)
+
+    def test_rt_06_stopping_the_clock_resets_the_count(self):
+        """RT-06"""
+        reactor = self._fake_reactor()
+        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+            start_calendar_clock(clock=reactor)
+            reactor.advance(1)
+
+        stop_calendar_clock()
+
+        self.assertEqual(elapsed_real_seconds(), 0)
+
+    def test_rt_07_a_raising_dispatch_still_advances_the_count(self):
+        """RT-07"""
+        reactor = self._fake_reactor()
+        with mock.patch(
+            "evennia_calendar.clock.gametime",
+            side_effect=[10 * 3600, 11 * 3600],
+        ):
+            with mock.patch.object(
+                service, "_dispatch", side_effect=RuntimeError("boom")
+            ):
+                with mock.patch.object(service, "calendar_log"):
+                    start_calendar_clock(clock=reactor)
+                    reactor.advance(1)
+                    reactor.advance(1)
+
+        # Real time passed whether or not a receiver worked. Counting after
+        # the dispatch instead of before it would let one game's broken
+        # handler freeze the cadence for every other consumer.
+        self.assertEqual(elapsed_real_seconds(), 2.0)
+
+    def test_rt_08_the_date_carries_the_count(self):
+        """RT-08"""
+        reactor = self._fake_reactor()
+        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+            start_calendar_clock(clock=reactor)
+            reactor.advance(1)
+            first = game_date()
+            reactor.advance(1)
+            reactor.advance(1)
+            later = game_date()
+
+        self.assertEqual(first.elapsed_real_seconds, 1.0)
+        self.assertEqual(later.elapsed_real_seconds, 3.0)
 
 
 class SignalTests(SimpleTestCase):
@@ -610,7 +877,12 @@ class SignalTests(SimpleTestCase):
         before, after = 10 * 3600, 11 * 3600
         self._run([before, after])
 
-        self.assertEqual(self.received, [(date_at(before), date_at(after))])
+        # Built on consecutive ticks, so each carries the real-second count
+        # standing when the clock built it.
+        self.assertEqual(
+            self.received,
+            [(date_at(before, real_seconds=1.0), date_at(after, real_seconds=2.0))],
+        )
 
     def test_sg_02_an_unchanged_hour_sends_nothing(self):
         """SG-02"""
@@ -779,6 +1051,25 @@ class RegisterSignalTests(SimpleTestCase):
 
         self.assertEqual(self.received, [])
 
+    def test_rs_08_a_registration_fires_on_a_tick_with_no_unit_turning(self):
+        """RS-08"""
+        self._register(
+            self.market_day,
+            key=lambda date: date.elapsed_real_seconds // 3,
+            name="every_third_second",
+        )
+        self._listen(self.market_day)
+
+        # The game clock never moves, so no unit ever turns over. Only the
+        # real-second count changes, and it is the consumer's key that says
+        # when that matters.
+        self._run([10 * 3600] * 7)
+
+        # Ticks 3 and 6 — the key moves from 0 to 1 and from 1 to 2.
+        self.assertEqual(
+            [date.elapsed_real_seconds for date in self.received], [3.0, 6.0]
+        )
+
     def test_rs_03_a_name_another_registration_uses_is_refused(self):
         """RS-03"""
         from django.dispatch import Signal
@@ -862,10 +1153,11 @@ class GameDateTests(SimpleTestCase):
         elapsed = SECONDS_PER_GAME_DAY * 725 + 13 * 3600 + 32 * 60
         with mock.patch(
             "evennia_calendar.clock.gametime", return_value=elapsed
-        ) as clock:
-            date = game_date()
+        ) as fake_clock:
+            with mock.patch.object(clock, "_elapsed_real_seconds", 7.0):
+                date = game_date()
 
-        clock.assert_called_once_with(absolute=False)
+        fake_clock.assert_called_once_with(absolute=False)
         self.assertEqual(
             (
                 date.year,
@@ -878,8 +1170,9 @@ class GameDateTests(SimpleTestCase):
                 date.hour,
                 date.minute,
                 date.phase,
+                date.elapsed_real_seconds,
             ),
-            (852, 6, 1, 6, 1, 6, Season.SPRING, 13, 32, 4),
+            (852, 6, 1, 6, 1, 6, Season.SPRING, 13, 32, 4, 7.0),
         )
 
     def test_gd_04_a_float_clock_still_gives_integer_fields(self):

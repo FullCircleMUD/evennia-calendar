@@ -1,8 +1,8 @@
 # Custom signals
 
 How to have the calendar clock fire a signal of your own, on a condition you define — a market every
-tenth day, a festival on a particular date, a fortnight, a tax day. You write a pure function of the
-date; the clock does the remembering and the comparing.
+tenth day, a festival on a particular date, a fortnight, a tax day, a cadence in real seconds. You
+write a pure function of the date; the clock does the remembering and the comparing.
 
 This page assumes you already have the clock running and know how to subscribe to the seven built-in
 signals. If not, start with [installing.md](installing.md).
@@ -28,8 +28,42 @@ On every tick the clock computes `key(previous)` and `key(current)`. When they d
 sent, carrying `previous` and `current` — the same payload the built-in signals use, so a receiver
 looks identical whichever it is connected to.
 
-You never store a previous value and you never write a comparison. Anything expressible as "a value
-derived from the date" works.
+You never store a previous value and you never write a comparison.
+
+**Your key is evaluated every tick**, whether or not anything on the calendar moved. It is your
+condition, and when it is worth asking is not ours to decide.
+
+## A cadence in real time
+
+Every field on a `GameDate` is a position in game time and moves at `TIME_FACTOR` — except one.
+`elapsed_real_seconds` is real seconds since the clock started, and it does not scale.
+
+```python
+regen_due = Signal()
+
+register_signal(
+    regen_due,
+    key=lambda date: date.elapsed_real_seconds // 20,
+    name="regen_due",
+)
+```
+
+Every twenty real seconds, whatever speed the game world runs at.
+
+Two things follow from what it is:
+
+- **It cannot go finer than the tick.** The clock looks once a real second, so a cadence shorter than
+  that is not expressible.
+- **It starts from zero each time the Server process does.** It is counted rather than derived, so
+  unlike the date it cannot be recomputed after a reload. Intervals are unaffected; where the
+  boundaries fall is not.
+
+Offsetting two cadences keeps them off the same tick:
+
+```python
+key=lambda date: date.elapsed_real_seconds // 1200          # meters
+key=lambda date: (date.elapsed_real_seconds + 7) // 20      # regeneration, staggered
+```
 
 ## Register it from the same place you start the clock
 
@@ -126,6 +160,7 @@ key=lambda date: date.day_of_year // 10                  # every tenth day
 key=lambda date: (date.year, date.month)                 # start of each month
 key=lambda date: date.day_of_year // 20                  # a fortnight
 key=lambda date: date.season is Season.WINTER            # entering and leaving winter
+key=lambda date: date.elapsed_real_seconds // 20         # every twenty real seconds
 ```
 
 That last one fires twice a year — once when the value becomes `True` and once when it becomes
