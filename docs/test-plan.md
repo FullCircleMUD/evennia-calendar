@@ -44,7 +44,7 @@ The fake objects the suite needs, named and purposed.
 | Fixture | Purpose |
 |---|---|
 | `django.test.override_settings` | Declares, changes or removes `CALENDAR_STARTING_YEAR` per case. The `CF` cases need nothing beyond it — there is one setting and it holds a plain value |
-| `mock.patch("evennia_calendar.clock.gametime")` | The fake clock. Patched at the library's import site, not at Evennia's, so nothing else in the process is affected |
+| `mock.patch("evennia.utils.gametime.gametime")` | The fake clock. Patched at Evennia's module, because `game_date()` imports `gametime` when it is called rather than when the clock is imported — see `SC-05` |
 | `date_at(elapsed_seconds, real_seconds=None)` | Builds the `GameDate` for a number of elapsed game seconds. The `CU` cases need pairs of dates, and one built this way cannot be internally inconsistent the way one assembled field by field can. `real_seconds` pins `elapsed_real_seconds`, needed wherever a case compares a date built now against one the clock built on an earlier tick |
 | `twisted.internet.task.Clock` | Drives the `LoopingCall` without a reactor, so the `CK` cases advance time rather than waiting for it. `start_calendar_clock()` takes it as an argument; production leaves it alone |
 
@@ -63,6 +63,7 @@ One section per function or surface, each with its own prefix and its own table.
 | SC-01 | The package is importable and carries a version | `test_sc_01_the_package_is_importable_and_versioned` |
 | SC-03 | The public surface resolves from the package root — `from evennia_calendar import game_date` gives the same object as `evennia_calendar.clock.game_date` | `test_sc_03_the_public_surface_resolves_from_the_package_root` |
 | SC-04 | An unknown attribute on the package raises `AttributeError` rather than resolving to something | `test_sc_04_an_unknown_package_attribute_raises` |
+| SC-05 | Importing `evennia_calendar.clock` does not import `evennia.utils.gametime` — that module queries `ServerConfig` at import and tolerates only SQLite's missing-table error, so on an empty Postgres database any consumer importing the clock during startup stops every management command, `migrate` included | `test_sc_05_importing_the_clock_does_not_import_gametime` |
 
 `SC-03` and `SC-04` cover the package's module-level `__getattr__`. The re-export has to be lazy: this
 package sits in `INSTALLED_APPS`, so its `__init__.py` runs during `django.setup()`, and a plain

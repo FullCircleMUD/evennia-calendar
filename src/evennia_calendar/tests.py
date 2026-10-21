@@ -5,7 +5,9 @@ Every test carries its case ID from docs/test-plan.md as its docstring, so
 the coverage trail reads in both directions.
 """
 
+import importlib
 import os
+import sys
 from dataclasses import FrozenInstanceError
 from unittest import TestCase, mock
 
@@ -82,7 +84,7 @@ def date_at(elapsed_seconds, real_seconds=None):
     field alone. Left out, the date carries whatever the count stands at.
     """
     with mock.patch(
-        "evennia_calendar.clock.gametime", return_value=elapsed_seconds
+        "evennia.utils.gametime.gametime", return_value=elapsed_seconds
     ):
         if real_seconds is None:
             return game_date()
@@ -108,6 +110,29 @@ class ScaffoldTests(TestCase):
         """SC-04"""
         with self.assertRaises(AttributeError):
             evennia_calendar.game_dat3
+
+    def test_sc_05_importing_the_clock_does_not_import_gametime(self):
+        """SC-05"""
+        import evennia.utils
+
+        # A fresh import rebinds each module as an attribute of its parent
+        # package, which patch.dict does not restore. Put both back, so the
+        # rest of the suite patches the modules it imported.
+        package_clock = evennia_calendar.clock
+        utils_gametime = getattr(evennia.utils, "gametime", None)
+        try:
+            with mock.patch.dict(sys.modules):
+                sys.modules.pop("evennia.utils.gametime", None)
+                sys.modules.pop("evennia_calendar.clock", None)
+                importlib.import_module("evennia_calendar.clock")
+                self.assertFalse(
+                    "evennia.utils.gametime" in sys.modules,
+                    "importing the clock imported evennia.utils.gametime",
+                )
+        finally:
+            evennia_calendar.clock = package_clock
+            if utils_gametime is not None:
+                evennia.utils.gametime = utils_gametime
 
 
 class StartingYearTests(SimpleTestCase):
@@ -608,7 +633,7 @@ class CalendarClockTests(SimpleTestCase):
         """CK-01"""
         from twisted.internet.task import LoopingCall
 
-        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+        with mock.patch("evennia.utils.gametime.gametime", return_value=0):
             loop = start_calendar_clock(clock=self._fake_reactor())
 
         self.assertIsInstance(loop, LoopingCall)
@@ -617,7 +642,7 @@ class CalendarClockTests(SimpleTestCase):
 
     def test_ck_02_starting_again_returns_the_clock_already_running(self):
         """CK-02"""
-        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+        with mock.patch("evennia.utils.gametime.gametime", return_value=0):
             first = start_calendar_clock(clock=self._fake_reactor())
             second = start_calendar_clock(clock=self._fake_reactor())
 
@@ -625,7 +650,7 @@ class CalendarClockTests(SimpleTestCase):
 
     def test_ck_03_stopping_stops_it_and_a_later_start_is_a_new_clock(self):
         """CK-03"""
-        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+        with mock.patch("evennia.utils.gametime.gametime", return_value=0):
             first = start_calendar_clock(clock=self._fake_reactor())
             stop_calendar_clock()
             self.assertFalse(first.running)
@@ -641,7 +666,7 @@ class CalendarClockTests(SimpleTestCase):
     def test_ck_05_the_first_tick_takes_a_baseline_and_announces_nothing(self):
         """CK-05"""
         reactor = self._fake_reactor()
-        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+        with mock.patch("evennia.utils.gametime.gametime", return_value=0):
             with mock.patch.object(service, "_dispatch") as dispatched:
                 start_calendar_clock(clock=reactor)
                 reactor.advance(1)
@@ -652,7 +677,7 @@ class CalendarClockTests(SimpleTestCase):
     def test_ck_06_a_tick_with_nothing_turned_over_announces_nothing(self):
         """CK-06"""
         reactor = self._fake_reactor()
-        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+        with mock.patch("evennia.utils.gametime.gametime", return_value=0):
             with mock.patch.object(service, "_dispatch") as dispatched:
                 start_calendar_clock(clock=reactor)
                 reactor.advance(1)
@@ -665,7 +690,7 @@ class CalendarClockTests(SimpleTestCase):
         reactor = self._fake_reactor()
         before, after = 10 * 3600, 11 * 3600
         with mock.patch(
-            "evennia_calendar.clock.gametime", side_effect=[before, after]
+            "evennia.utils.gametime.gametime", side_effect=[before, after]
         ):
             with mock.patch.object(service, "_dispatch") as dispatched:
                 start_calendar_clock(clock=reactor)
@@ -686,7 +711,7 @@ class CalendarClockTests(SimpleTestCase):
         """CK-08"""
         reactor = self._fake_reactor()
         with mock.patch(
-            "evennia_calendar.clock.gametime",
+            "evennia.utils.gametime.gametime",
             side_effect=[10 * 3600, 11 * 3600],
         ):
             with mock.patch.object(
@@ -733,7 +758,7 @@ class RealSecondsTests(SimpleTestCase):
     def test_rt_02_each_tick_advances_the_count_by_the_interval(self):
         """RT-02"""
         reactor = self._fake_reactor()
-        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+        with mock.patch("evennia.utils.gametime.gametime", return_value=0):
             start_calendar_clock(clock=reactor)
             reactor.advance(1)
             reactor.advance(1)
@@ -744,7 +769,7 @@ class RealSecondsTests(SimpleTestCase):
     def test_rt_03_a_non_default_interval_advances_by_that_interval(self):
         """RT-03"""
         reactor = self._fake_reactor()
-        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+        with mock.patch("evennia.utils.gametime.gametime", return_value=0):
             start_calendar_clock(interval=0.5, clock=reactor)
             reactor.advance(0.5)
             reactor.advance(0.5)
@@ -761,7 +786,7 @@ class RealSecondsTests(SimpleTestCase):
         # than the last, while only one real second passed between them.
         scaled = [n * 360 for n in range(10)]
         with mock.patch(
-            "evennia_calendar.clock.gametime", side_effect=scaled
+            "evennia.utils.gametime.gametime", side_effect=scaled
         ):
             start_calendar_clock(clock=reactor)
             reactor.advance(1)
@@ -774,7 +799,7 @@ class RealSecondsTests(SimpleTestCase):
         advance_real_seconds(99)
 
         reactor = self._fake_reactor()
-        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+        with mock.patch("evennia.utils.gametime.gametime", return_value=0):
             start_calendar_clock(clock=reactor)
 
         self.assertEqual(elapsed_real_seconds(), 0)
@@ -782,7 +807,7 @@ class RealSecondsTests(SimpleTestCase):
     def test_rt_06_stopping_the_clock_resets_the_count(self):
         """RT-06"""
         reactor = self._fake_reactor()
-        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+        with mock.patch("evennia.utils.gametime.gametime", return_value=0):
             start_calendar_clock(clock=reactor)
             reactor.advance(1)
 
@@ -794,7 +819,7 @@ class RealSecondsTests(SimpleTestCase):
         """RT-07"""
         reactor = self._fake_reactor()
         with mock.patch(
-            "evennia_calendar.clock.gametime",
+            "evennia.utils.gametime.gametime",
             side_effect=[10 * 3600, 11 * 3600],
         ):
             with mock.patch.object(
@@ -813,7 +838,7 @@ class RealSecondsTests(SimpleTestCase):
     def test_rt_08_the_date_carries_the_count(self):
         """RT-08"""
         reactor = self._fake_reactor()
-        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+        with mock.patch("evennia.utils.gametime.gametime", return_value=0):
             start_calendar_clock(clock=reactor)
             reactor.advance(1)
             first = game_date()
@@ -861,7 +886,7 @@ class SignalTests(SimpleTestCase):
 
         reactor = Clock()
         with mock.patch(
-            "evennia_calendar.clock.gametime", side_effect=times
+            "evennia.utils.gametime.gametime", side_effect=times
         ):
             start_calendar_clock(clock=reactor)
             for _ in times:
@@ -1012,7 +1037,7 @@ class RegisterSignalTests(SimpleTestCase):
 
         reactor = Clock()
         with mock.patch(
-            "evennia_calendar.clock.gametime", side_effect=times
+            "evennia.utils.gametime.gametime", side_effect=times
         ):
             start_calendar_clock(clock=reactor)
             for _ in times:
@@ -1139,7 +1164,7 @@ class GameDateTests(SimpleTestCase):
 
     def test_gd_01_the_dataclass_is_frozen(self):
         """GD-01"""
-        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+        with mock.patch("evennia.utils.gametime.gametime", return_value=0):
             date = game_date()
 
         with self.assertRaises(FrozenInstanceError):
@@ -1152,7 +1177,7 @@ class GameDateTests(SimpleTestCase):
         # into that day. Day 5 of a year is month 0 day 5, week 0 day 5, spring.
         elapsed = SECONDS_PER_GAME_DAY * 725 + 13 * 3600 + 32 * 60
         with mock.patch(
-            "evennia_calendar.clock.gametime", return_value=elapsed
+            "evennia.utils.gametime.gametime", return_value=elapsed
         ) as fake_clock:
             with mock.patch.object(clock, "_elapsed_real_seconds", 7.0):
                 date = game_date()
@@ -1182,7 +1207,7 @@ class GameDateTests(SimpleTestCase):
         # division on a float yields a float — and every field arrived as one.
         elapsed = float(SECONDS_PER_GAME_DAY) * 725 + 13 * 3600 + 32.75 * 60
         with mock.patch(
-            "evennia_calendar.clock.gametime", return_value=elapsed
+            "evennia.utils.gametime.gametime", return_value=elapsed
         ):
             date = game_date()
 
@@ -1202,7 +1227,7 @@ class GameDateTests(SimpleTestCase):
 
     def test_gd_03_the_year_comes_through_the_accessor(self):
         """GD-03"""
-        with mock.patch("evennia_calendar.clock.gametime", return_value=0):
+        with mock.patch("evennia.utils.gametime.gametime", return_value=0):
             date = game_date()
 
         self.assertEqual(date.year, DEFAULT_STARTING_YEAR)

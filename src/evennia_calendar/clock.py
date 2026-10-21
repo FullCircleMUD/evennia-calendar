@@ -14,11 +14,6 @@ factory.
 
 from dataclasses import dataclass
 
-# Reading the game clock is what this module is for, so it is the one place
-# outside log.py that reaches for Evennia. Imported at module scope rather than
-# inside the function so the suite has a single name to patch.
-from evennia.utils.gametime import gametime
-
 from .config import (
     DAYS_PER_MONTH,
     DAYS_PER_SEASON,
@@ -206,6 +201,12 @@ def game_date() -> GameDate:
     is expressed as a year in our setting instead. See docs/installing.md for
     what that means for ``TIME_GAME_EPOCH``.
     """
+    # Imported here, not at module scope: importing evennia.utils.gametime
+    # queries ServerConfig, and on an empty Postgres database that raises an
+    # error Evennia does not catch. A consumer importing this module during
+    # startup would then stop `migrate` itself from running. See SC-05.
+    from evennia.utils.gametime import gametime
+
     elapsed = gametime(absolute=False)
 
     day = _day_number(elapsed)
