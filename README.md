@@ -63,7 +63,7 @@ python runtests.py
 ## Learn more
 
 - [docs/INDEX.md](https://github.com/FullCircleMUD/evennia-calendar/blob/main/docs/INDEX.md) — the design wiki
-- [docs/installing.md](https://github.com/FullCircleMUD/evennia-calendar/blob/main/docs/installing.md) — everything a game declares, the eleven fields, and the seven signals
+- [docs/installing.md](https://github.com/FullCircleMUD/evennia-calendar/blob/main/docs/installing.md) — everything a game declares, the twelve fields, and the seven signals
 - [docs/custom-signals.md](https://github.com/FullCircleMUD/evennia-calendar/blob/main/docs/custom-signals.md) — having the clock fire a signal of your own
 - [docs/test-plan.md](https://github.com/FullCircleMUD/evennia-calendar/blob/main/docs/test-plan.md) — every case the library commits to covering
 - [docs/interoperability.md](https://github.com/FullCircleMUD/evennia-calendar/blob/main/docs/interoperability.md) — this library against its siblings

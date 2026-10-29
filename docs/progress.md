@@ -2,6 +2,18 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-10-29 — a cadence on the wall clock
+
+109 tests. `GameDate` gained a twelfth field, `wall_clock_seconds`: the system clock's reading, taken
+once as the date is built. The `WC` cases.
+
+- **For cadences `elapsed_real_seconds` cannot carry.** That count restarts at zero with the Server
+  process, so a period of hours is pushed back by every reload, and nothing keyed on it lands at a set
+  time of day.
+- **Read from the date, never from the clock.** A key that reads the system clock itself is asked
+  about `previous` and `current` in the same instant and gets one answer for both, so it never fires.
+  `WC-04` drives the clock across a boundary and asserts the signal fires on that tick and no other.
+
 ## 2026-09-20 — a cadence in real time, and the dispatch that was dropping it
 
 104 tests. `GameDate` gained an eleventh field and the dispatch gained the tick it was missing. The

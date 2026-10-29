@@ -31,6 +31,7 @@ seems likely.
 | `PH` | `_phase()` — an hour to one of the six four-hour watches |
 | `GD` | `GameDate` and `game_date()` — the frozen result, and the factory that reads the clock and composes one |
 | `RT` | `elapsed_real_seconds` — the count of real time since the clock started, untouched by `TIME_FACTOR` |
+| `WC` | `wall_clock_seconds` — the system clock's reading when the date was built, in seconds since the epoch |
 | `TR` | `_triggered_registrations()` — which consumers' keys fired between one tick and the next |
 | `CU` | `_changed_units()` — which units turned over between two dates |
 | `CK` | The clock — starting, stopping, remembering, and surviving a hook that raises |
@@ -45,7 +46,8 @@ The fake objects the suite needs, named and purposed.
 |---|---|
 | `django.test.override_settings` | Declares, changes or removes `CALENDAR_STARTING_YEAR` per case. The `CF` cases need nothing beyond it — there is one setting and it holds a plain value |
 | `mock.patch("evennia.utils.gametime.gametime")` | The fake clock. Patched at Evennia's module, because `game_date()` imports `gametime` when it is called rather than when the clock is imported — see `SC-05` |
-| `date_at(elapsed_seconds, real_seconds=None)` | Builds the `GameDate` for a number of elapsed game seconds. The `CU` cases need pairs of dates, and one built this way cannot be internally inconsistent the way one assembled field by field can. `real_seconds` pins `elapsed_real_seconds`, needed wherever a case compares a date built now against one the clock built on an earlier tick |
+| `date_at(elapsed_seconds, real_seconds=None, wall_seconds=None)` | Builds the `GameDate` for a number of elapsed game seconds. The `CU` cases need pairs of dates, and one built this way cannot be internally inconsistent the way one assembled field by field can. `real_seconds` pins `elapsed_real_seconds`, and `wall_seconds` pins `wall_clock_seconds`, needed wherever a case compares a date built now against one the clock built on an earlier tick |
+| The system clock, patched where `clock.py` reads it | The fake wall clock for the `WC` cases. Patched separately from `gametime`, so a case can move one and hold the other |
 | `twisted.internet.task.Clock` | Drives the `LoopingCall` without a reactor, so the `CK` cases advance time rather than waiting for it. `start_calendar_clock()` takes it as an argument; production leaves it alone |
 
 The `DN`, `DY` and `YR` cases need no fixtures at all: each helper takes integers and returns
@@ -332,6 +334,9 @@ derived from `gametime()`. It is a float because the clock's interval is one, an
 seconds cannot be promised when `start_calendar_clock()` takes that interval as an argument. `GD-02`
 still widens to include it; `GD-04`'s list does not.
 
+`wall_clock_seconds` is the same: a float, because the system clock reads as one. `GD-02` widens to
+include it; `GD-04`'s list does not.
+
 ### `RT` — `elapsed_real_seconds`
 
 Real time since the clock started, in seconds. Every other field on `GameDate` is a position in game
@@ -364,6 +369,35 @@ one game's bad receiver would freeze real time for every other consumer's signal
 
 `RT-02` and `RT-03` are separate because an implementation that increments by one passes `RT-02` and
 fails `RT-03`. One is the default interval, not the definition of a tick.
+
+### `WC` — `wall_clock_seconds`
+
+The system clock's reading at the moment `game_date()` built the date, in seconds since the epoch.
+What a consumer keys on when a cadence has to hold its place across a restart, or land at a set time
+of day — `elapsed_real_seconds` starts from zero with the Server process, so a long period keyed on
+it is pushed back by every reload.
+
+**It is read once, when the date is built, and carried on it.** A key reads it from the date it is
+handed, so `key(previous)` gets the last tick's reading and `key(current)` this tick's:
+
+```python
+register_signal(rebuild_due, key=lambda date: int(date.wall_clock_seconds // 86400), name="rebuild_due")
+```
+
+| ID | Case | Test function |
+|---|---|---|
+| WC-01 | `game_date()` carries the system clock's reading at the moment it was called | `test_wc_01_the_date_carries_the_system_clock` |
+| WC-02 | `TIME_FACTOR` does not touch it — a scaled `gametime()` leaves it equal to the system clock's reading | `test_wc_02_the_game_clock_does_not_touch_it` |
+| WC-03 | Starting or stopping the clock does not reset it — a date built after a restart carries the system clock's reading, not a count from zero | `test_wc_03_a_restart_does_not_reset_it` |
+| WC-04 | A key on `wall_clock_seconds` registered with `register_signal()` fires on the tick whose reading crosses its boundary, and on neither tick either side — the clock driven a tick at a time, the system clock advanced a second per tick | `test_wc_04_a_key_on_it_fires_on_the_tick_that_crosses_its_boundary` |
+
+`WC-04` is the case the field exists for. A key that reads the system clock itself, rather than the
+date it is handed, is asked about `previous` and `current` in the same instant and gets the same
+answer for both, so it never fires. A `wall_clock_seconds` that read the clock when accessed rather
+than when the date was built would fail the same way, and `WC-01` would not see it.
+
+`WC-02` and `WC-03` guard against modelling it on its neighbours: derived from `gametime()` it is
+scaled by `TIME_FACTOR`, and counted like `elapsed_real_seconds` it restarts at zero.
 
 ### `TR` — `_triggered_registrations()`
 

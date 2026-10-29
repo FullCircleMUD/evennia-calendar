@@ -12,6 +12,7 @@ a ``GameDate`` — so adding a field means adding a helper, not complicating the
 factory.
 """
 
+import time
 from dataclasses import dataclass
 
 from .config import (
@@ -68,15 +69,25 @@ class GameDate:
     minute: int
     phase: int
 
-    #: Real seconds since the clock started — the one field that is not a
-    #: position in game time. Every other field moves at ``TIME_FACTOR``; this
-    #: one moves at a second per second, so a consumer wanting a cadence in
-    #: real time keys on it: ``lambda d: d.elapsed_real_seconds // 20``.
+    #: Real seconds since the clock started — not a position in game time.
+    #: The calendar fields move at ``TIME_FACTOR``; this one moves at a second
+    #: per second, so a consumer wanting a cadence in real time keys on it:
+    #: ``lambda d: d.elapsed_real_seconds // 20``.
     #:
     #: A float, because ``start_calendar_clock()`` takes its interval as one.
     #: It is counted by the clock rather than derived from ``gametime()``, so
     #: it starts from zero each time the Server process does.
     elapsed_real_seconds: float
+
+    #: The system clock's reading when this date was built, in seconds since
+    #: the epoch. For a real-time cadence that has to hold its place across a
+    #: restart, or land at a set time of day:
+    #: ``lambda d: int(d.wall_clock_seconds // 3600)``.
+    #:
+    #: Read once, as the date is built, so a key handed the last tick's date
+    #: gets the last tick's reading. A float, because the system clock reads
+    #: as one.
+    wall_clock_seconds: float
 
 
 def _day_number(elapsed_seconds: float) -> int:
@@ -229,4 +240,5 @@ def game_date() -> GameDate:
         minute=_minute(seconds_into_day),
         phase=_phase(hour) + 1,
         elapsed_real_seconds=_elapsed_real_seconds,
+        wall_clock_seconds=time.time(),
     )

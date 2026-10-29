@@ -5,6 +5,7 @@ Every test carries its case ID from docs/test-plan.md as its docstring, so
 the coverage trail reads in both directions.
 """
 
+import contextlib
 import importlib
 import os
 import sys
@@ -72,26 +73,46 @@ ALL_UNITS = frozenset(
 )
 
 
-def date_at(elapsed_seconds, real_seconds=None):
+def wall_clock(*readings):
+    """Patch the system clock where ``clock.py`` reads it.
+
+    One reading holds the clock still; several are handed out in turn, one per
+    read.
+    """
+    fake = mock.Mock()
+    if len(readings) == 1:
+        fake.time.return_value = readings[0]
+    else:
+        fake.time.side_effect = list(readings)
+    return mock.patch.object(clock, "time", fake)
+
+
+def date_at(elapsed_seconds, real_seconds=None, wall_seconds=None):
     """Build the GameDate for a number of elapsed game seconds.
 
     Cheaper and safer than hand-writing the fields: a date built this way
     cannot be internally inconsistent, which one assembled by hand can.
 
-    ``real_seconds`` pins ``elapsed_real_seconds`` on the result. It is needed
-    wherever a case compares a date built now against one the clock built on an
-    earlier tick — the count has moved since, so the two would differ on that
-    field alone. Left out, the date carries whatever the count stands at.
+    ``real_seconds`` pins ``elapsed_real_seconds`` on the result, and
+    ``wall_seconds`` pins ``wall_clock_seconds``. Each is needed wherever a
+    case compares a date built now against one the clock built on an earlier
+    tick — both have moved since, so the two would differ on that field alone.
+    Left out, the date carries whatever the count and the system clock stand
+    at.
     """
-    with mock.patch(
-        "evennia.utils.gametime.gametime", return_value=elapsed_seconds
-    ):
-        if real_seconds is None:
-            return game_date()
-        with mock.patch.object(
-            clock, "_elapsed_real_seconds", real_seconds
-        ):
-            return game_date()
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(
+            mock.patch(
+                "evennia.utils.gametime.gametime", return_value=elapsed_seconds
+            )
+        )
+        if real_seconds is not None:
+            stack.enter_context(
+                mock.patch.object(clock, "_elapsed_real_seconds", real_seconds)
+            )
+        if wall_seconds is not None:
+            stack.enter_context(wall_clock(wall_seconds))
+        return game_date()
 
 
 class ScaffoldTests(TestCase):
@@ -667,12 +688,16 @@ class CalendarClockTests(SimpleTestCase):
         """CK-05"""
         reactor = self._fake_reactor()
         with mock.patch("evennia.utils.gametime.gametime", return_value=0):
-            with mock.patch.object(service, "_dispatch") as dispatched:
-                start_calendar_clock(clock=reactor)
-                reactor.advance(1)
+            with wall_clock(1_700_000_000.0):
+                with mock.patch.object(service, "_dispatch") as dispatched:
+                    start_calendar_clock(clock=reactor)
+                    reactor.advance(1)
 
         dispatched.assert_not_called()
-        self.assertEqual(service._remembered, date_at(0, real_seconds=1.0))
+        self.assertEqual(
+            service._remembered,
+            date_at(0, real_seconds=1.0, wall_seconds=1_700_000_000.0),
+        )
 
     def test_ck_06_a_tick_with_nothing_turned_over_announces_nothing(self):
         """CK-06"""
@@ -692,20 +717,24 @@ class CalendarClockTests(SimpleTestCase):
         with mock.patch(
             "evennia.utils.gametime.gametime", side_effect=[before, after]
         ):
-            with mock.patch.object(service, "_dispatch") as dispatched:
-                start_calendar_clock(clock=reactor)
-                reactor.advance(1)
-                reactor.advance(1)
+            with wall_clock(1_700_000_001.0, 1_700_000_002.0):
+                with mock.patch.object(service, "_dispatch") as dispatched:
+                    start_calendar_clock(clock=reactor)
+                    reactor.advance(1)
+                    reactor.advance(1)
 
         # The two dates were built on consecutive ticks, so they differ in
-        # their real-second count as well as the hour — pin each to the count
-        # standing when the clock built it.
+        # their real-second count and their wall-clock reading as well as the
+        # hour — pin each to what stood when the clock built it.
         dispatched.assert_called_once_with(
-            date_at(before, real_seconds=1.0),
-            date_at(after, real_seconds=2.0),
+            date_at(before, real_seconds=1.0, wall_seconds=1_700_000_001.0),
+            date_at(after, real_seconds=2.0, wall_seconds=1_700_000_002.0),
             frozenset({"hour"}),
         )
-        self.assertEqual(service._remembered, date_at(after, real_seconds=2.0))
+        self.assertEqual(
+            service._remembered,
+            date_at(after, real_seconds=2.0, wall_seconds=1_700_000_002.0),
+        )
 
     def test_ck_08_a_raising_dispatch_does_not_stop_the_clock(self):
         """CK-08"""
@@ -850,6 +879,88 @@ class RealSecondsTests(SimpleTestCase):
         self.assertEqual(later.elapsed_real_seconds, 3.0)
 
 
+class WallClockSecondsTests(SimpleTestCase):
+    """WC — the system clock's reading, carried on the date."""
+
+    def setUp(self):
+        self.received = []
+        self.due = Signal()
+
+    def tearDown(self):
+        stop_calendar_clock()
+        unregister_signal("every_minute")
+
+    @staticmethod
+    def _fake_reactor():
+        from twisted.internet.task import Clock
+
+        return Clock()
+
+    def test_wc_01_the_date_carries_the_system_clock(self):
+        """WC-01"""
+        with mock.patch("evennia.utils.gametime.gametime", return_value=0):
+            with wall_clock(1_700_000_123.5):
+                date = game_date()
+
+        self.assertEqual(date.wall_clock_seconds, 1_700_000_123.5)
+
+    def test_wc_02_the_game_clock_does_not_touch_it(self):
+        """WC-02"""
+        # A fast game, 360 game seconds to the real one, and well on: a value
+        # derived from gametime() would be nowhere near the system clock.
+        with mock.patch(
+            "evennia.utils.gametime.gametime", return_value=360 * 1_000_000
+        ):
+            with wall_clock(1_700_000_000.0):
+                date = game_date()
+
+        self.assertEqual(date.wall_clock_seconds, 1_700_000_000.0)
+
+    def test_wc_03_a_restart_does_not_reset_it(self):
+        """WC-03"""
+        with mock.patch("evennia.utils.gametime.gametime", return_value=0):
+            with wall_clock(1_700_000_500.0):
+                reactor = self._fake_reactor()
+                start_calendar_clock(clock=reactor)
+                reactor.advance(1)
+                reactor.advance(1)
+                stop_calendar_clock()
+
+                start_calendar_clock(clock=self._fake_reactor())
+                date = game_date()
+
+        self.assertEqual(date.wall_clock_seconds, 1_700_000_500.0)
+
+    def test_wc_04_a_key_on_it_fires_on_the_tick_that_crosses_its_boundary(self):
+        """WC-04"""
+        register_signal(
+            self.due,
+            key=lambda date: int(date.wall_clock_seconds // 60),
+            name="every_minute",
+        )
+
+        def record(sender, previous, current, **kwargs):
+            self.received.append(current.wall_clock_seconds)
+
+        self.due.connect(record)
+
+        # Six ticks, a second apart, across the minute at 1_700_000_040 — a
+        # whole number of minutes since the epoch.
+        readings = [1_700_000_037.0 + n for n in range(6)]
+        reactor = self._fake_reactor()
+        with mock.patch("evennia.utils.gametime.gametime", return_value=0):
+            with wall_clock(*readings):
+                start_calendar_clock(clock=reactor)
+                for _ in readings:
+                    reactor.advance(1)
+
+        self.due.disconnect(record)
+
+        # 39 → 40 is the only tick whose two readings sit in different
+        # minutes.
+        self.assertEqual(self.received, [1_700_000_040.0])
+
+
 class SignalTests(SimpleTestCase):
     """SG — what a consumer subscribes to, and a receiver that misbehaves."""
 
@@ -900,13 +1011,19 @@ class SignalTests(SimpleTestCase):
 
         self._connect(record)
         before, after = 10 * 3600, 11 * 3600
-        self._run([before, after])
+        with wall_clock(1_700_000_001.0, 1_700_000_002.0):
+            self._run([before, after])
 
-        # Built on consecutive ticks, so each carries the real-second count
-        # standing when the clock built it.
+        # Built on consecutive ticks, so each carries the real-second count and
+        # the wall-clock reading standing when the clock built it.
         self.assertEqual(
             self.received,
-            [(date_at(before, real_seconds=1.0), date_at(after, real_seconds=2.0))],
+            [
+                (
+                    date_at(before, real_seconds=1.0, wall_seconds=1_700_000_001.0),
+                    date_at(after, real_seconds=2.0, wall_seconds=1_700_000_002.0),
+                )
+            ],
         )
 
     def test_sg_02_an_unchanged_hour_sends_nothing(self):
@@ -1180,7 +1297,8 @@ class GameDateTests(SimpleTestCase):
             "evennia.utils.gametime.gametime", return_value=elapsed
         ) as fake_clock:
             with mock.patch.object(clock, "_elapsed_real_seconds", 7.0):
-                date = game_date()
+                with wall_clock(1_700_000_123.5):
+                    date = game_date()
 
         fake_clock.assert_called_once_with(absolute=False)
         self.assertEqual(
@@ -1196,8 +1314,9 @@ class GameDateTests(SimpleTestCase):
                 date.minute,
                 date.phase,
                 date.elapsed_real_seconds,
+                date.wall_clock_seconds,
             ),
-            (852, 6, 1, 6, 1, 6, Season.SPRING, 13, 32, 4, 7.0),
+            (852, 6, 1, 6, 1, 6, Season.SPRING, 13, 32, 4, 7.0, 1_700_000_123.5),
         )
 
     def test_gd_04_a_float_clock_still_gives_integer_fields(self):

@@ -35,7 +35,7 @@ condition, and when it is worth asking is not ours to decide.
 
 ## A cadence in real time
 
-Every field on a `GameDate` is a position in game time and moves at `TIME_FACTOR` — except one.
+Every field on a `GameDate` is a position in game time and moves at `TIME_FACTOR` — except two.
 `elapsed_real_seconds` is real seconds since the clock started, and it does not scale.
 
 ```python
@@ -64,6 +64,22 @@ Offsetting two cadences keeps them off the same tick:
 key=lambda date: date.elapsed_real_seconds // 1200          # meters
 key=lambda date: (date.elapsed_real_seconds + 7) // 20      # regeneration, staggered
 ```
+
+## A cadence on the wall clock
+
+`wall_clock_seconds` is the other: the system clock's reading when the date was built, in seconds
+since the epoch. Key on it when a cadence must not restart with the Server process — a period long
+enough that a reload would keep pushing it back — or when it has to land at a set time of day.
+
+```python
+key=lambda date: int(date.wall_clock_seconds // 86400)                # once a day, at midnight UTC
+key=lambda date: int((date.wall_clock_seconds - 300) // 3600)         # five past every hour
+```
+
+**Read the time from the date you are handed.** The clock asks your key about the last tick's date and
+this tick's in the same instant. A key that reads the system clock itself — `time.time()`,
+`timezone.now()` — gets the same answer for both and never fires. `wall_clock_seconds` carries the
+reading taken when each date was built, so `key(previous)` gets the last tick's.
 
 ## Register it from the same place you start the clock
 

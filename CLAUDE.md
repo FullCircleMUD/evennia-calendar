@@ -28,10 +28,10 @@ For the design wiki, read [docs/INDEX.md](docs/INDEX.md).
 
 ## Project status
 
-**Feature complete, and proven against a real game.** 104 tests passing, plus a demo gamedir under
+**Feature complete, and proven against a real game.** 109 tests passing, plus a demo gamedir under
 `examples/` that boots a real Evennia server with the library installed.
 
-`from evennia_calendar import game_date` returns the whole date and time of day — eleven fields,
+`from evennia_calendar import game_date` returns the whole date and time of day — twelve fields,
 every calendar position counting from one, the clock from zero. A bad setting is refused at boot —
 logged to `calendar.log` at ERROR, then raised; see [docs/progress.md](docs/progress.md).
 
@@ -40,8 +40,13 @@ over — seven built-ins, plus any a consumer registers with `register_signal()`
 their own. A consumer's key is evaluated every tick, whether or not the calendar moved: when their
 condition is worth asking is not ours to decide. See [docs/progress.md](docs/progress.md).
 
+**`wall_clock_seconds` is the system clock**, read once as the date is built. Not a calendar value and
+not stored, so principle 4 does not reach it. It is what a key reads for a real-time cadence that has
+to survive a reload — a key reading the system clock itself is asked about both ticks in the same
+instant and never fires.
+
 **`elapsed_real_seconds` is the one field that is not derived.** Every other value is a function of
-`gametime()` and scales with `TIME_FACTOR`; this one is a count the clock keeps, in real seconds, so
+`gametime()` or of the system clock; this one is a count the clock keeps, in real seconds, so
 a consumer can key a cadence that does not scale. It cannot be recomputed and starts from zero with
 the Server process — which is the carve-out to principle 4 below, stated plainly rather than argued
 around.
